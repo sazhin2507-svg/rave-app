@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
-    <title>RAVE</title>
+    <title>RAVE — музыкальный стриминг</title>
     <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:opsz,wght@14..32,300;14..32,400;14..32,500;14..32,600;14..32,700&display=swap" rel="stylesheet">
     <style>
         * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
@@ -140,6 +140,7 @@
         .mini-controls { display:flex; gap:12px; align-items:center; }
         .mini-ctrl { background:none; border:none; width:36px; height:36px; display:inline-flex; align-items:center; justify-content:center; cursor:pointer; color:#fff; border-radius:50%; transition:0.2s; }
         .mini-ctrl:hover { background:rgba(255,255,255,0.1); }
+        .mini-ctrl svg { width:18px; height:18px; stroke:currentColor; fill:none; stroke-width:1.8; }
         .mini-ctrl.like-btn svg { stroke:currentColor; fill:none; }
         .mini-ctrl.like-btn.active { color:#1db954; }
         .mini-ctrl.like-btn.active svg { fill:#1db954; stroke:#1db954; }
@@ -149,6 +150,7 @@
         .fullplayer.active { display:flex; }
         @keyframes slideUp { from{transform:translateY(100%);} to{transform:translateY(0);} }
         .close-full { position:absolute; top:20px; right:24px; background:none; border:none; width:44px; height:44px; display:flex; align-items:center; justify-content:center; cursor:pointer; color:#fff; }
+        .close-full svg { width:28px; height:28px; stroke:currentColor; stroke-width:1.6; }
         .full-cover { width:260px; height:260px; margin:40px auto 30px; border-radius:32px; background-size:cover; background-position:center; background-color:#2a2a32; }
         .full-title { font-family:'Bebas Neue', cursive; font-size:28px; text-align:center; margin-bottom:8px; }
         .full-artist { text-align:center; font-size:16px; color:#9e9ea8; margin-bottom:30px; cursor:pointer; transition:color 0.2s; display:inline-block; padding:4px 12px; border-radius:40px; }
@@ -172,23 +174,10 @@
         .tab-item svg { width:24px; height:24px; stroke:currentColor; fill:none; stroke-width:1.6; }
         .tab-item.active { color:#1db954; background:rgba(29,185,84,0.12); }
         
-        /* УСИЛЕННАЯ АНИМАЦИЯ МЕРЦАНИЯ ДЛЯ КНОПКИ "СЕЙЧАС ИГРАЕТ" */
         @keyframes softPulse {
-            0% { 
-                background-color: #1db954; 
-                box-shadow: 0 0 0 rgba(29,185,84,0.3);
-                transform: scale(1);
-            }
-            50% { 
-                background-color: #0f9a48; 
-                box-shadow: 0 0 18px rgba(29,185,84,1), 0 0 6px rgba(29,185,84,0.8);
-                transform: scale(1.02);
-            }
-            100% { 
-                background-color: #1db954; 
-                box-shadow: 0 0 0 rgba(29,185,84,0.3);
-                transform: scale(1);
-            }
+            0% { background-color: #1db954; box-shadow: 0 0 0 rgba(29,185,84,0.3); transform: scale(1); }
+            50% { background-color: #0f9a48; box-shadow: 0 0 18px rgba(29,185,84,1), 0 0 6px rgba(29,185,84,0.8); transform: scale(1.02); }
+            100% { background-color: #1db954; box-shadow: 0 0 0 rgba(29,185,84,0.3); transform: scale(1); }
         }
         
         .playlist-info {
@@ -196,8 +185,8 @@
             border-radius: 40px;
             padding: 14px 18px;
             text-align: center;
-            margin-top: 40px;       /* опускаем кнопку значительно ниже */
-            margin-bottom: 24px;    /* дополнительный отступ снизу для равновесия */
+            margin-top: 40px;
+            margin-bottom: 24px;
             cursor: pointer;
             transition: 0.2s;
             font-weight: 700;
@@ -213,7 +202,28 @@
             transform: scale(0.98);
         }
         
-        /* адаптивная коррекция для очень маленьких экранов — кнопка остается на виду */
+        .load-more-btn {
+            background: rgba(29,185,84,0.2);
+            border: 1px solid rgba(29,185,84,0.5);
+            border-radius: 40px;
+            padding: 14px 20px;
+            text-align: center;
+            margin: 20px 0 40px;
+            cursor: pointer;
+            transition: 0.2s;
+            font-weight: 600;
+            color: #1db954;
+            font-size: 14px;
+        }
+        .load-more-btn:hover {
+            background: rgba(29,185,84,0.3);
+            transform: scale(0.98);
+        }
+        .load-more-btn.loading {
+            opacity: 0.6;
+            pointer-events: none;
+        }
+        
         @media (max-width: 480px) { 
             .wave-cover{width:150px;height:150px;} 
             .full-cover{width:200px;height:200px;} 
@@ -225,12 +235,17 @@
                 padding: 12px 16px;
             }
         }
-        /* для планшетов и выше сохраняем пропорции */
         @media (min-width: 700px) {
             .playlist-info {
                 margin-top: 48px;
                 margin-bottom: 28px;
             }
+        }
+        
+        .loading-spinner {
+            text-align: center;
+            padding: 20px;
+            color: #1db954;
         }
     </style>
 </head>
@@ -262,6 +277,9 @@
     <div id="libraryPage" class="page">
         <div class="section-header"><h2>библиотека</h2></div>
         <div id="libraryList" class="track-list"></div>
+        <div id="loadMoreContainer" style="display: none;">
+            <div class="load-more-btn" id="loadMoreBtn">Загрузить еще</div>
+        </div>
     </div>
 
     <div id="favoritesPage" class="page">
@@ -315,7 +333,6 @@
         <div class="time-row"><span id="fullCurrent">0:00</span><span id="fullDuration">0:00</span></div>
         <div class="progress-bar" id="fullProgressBar"><div class="progress-fill" id="fullProgressFill"></div></div>
     </div>
-    <!-- Кнопка "Сейчас играет" расположена теперь значительно ниже, почти посередине между прогресс-баром и нижним краем, с усиленным мерцанием -->
     <div class="playlist-info" id="playlistInfoBtn">Сейчас играет — Все треки</div>
 </div>
 
@@ -325,6 +342,11 @@
     const SUPABASE_ANON_KEY = 'sb_publishable_-c2SB81GbdIS-thI0hyLzA_yZ78U7pD'
     const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
 
+    // Кэширование данных в localStorage
+    const CACHE_KEY = 'rave_cache';
+    const CACHE_TIME_KEY = 'rave_cache_time';
+    const CACHE_DURATION = 5 * 60 * 1000; // 5 минут
+    
     let allTracks = []
     let allArtists = []
     let albumsMap = new Map()
@@ -345,6 +367,15 @@
     let currentPlaylistAlbumId = null
     let currentPlaylistArtistId = null
     let shuffledRaveQueue = []
+    
+    // Пагинация
+    let currentOffset = 0;
+    const PAGE_SIZE = 10;
+    let hasMoreTracks = true;
+    let isLoadingMore = false;
+    let totalTracksCount = 0;
+    
+    audio.preload = 'metadata';
 
     function shuffleArray(arr) {
         const copy = [...arr];
@@ -361,6 +392,59 @@
             return;
         }
         shuffledRaveQueue = shuffleArray(allTracks);
+    }
+    
+    function loadFromCache() {
+        try {
+            const cached = localStorage.getItem(CACHE_KEY);
+            const cacheTime = localStorage.getItem(CACHE_TIME_KEY);
+            if (cached && cacheTime && (Date.now() - parseInt(cacheTime)) < CACHE_DURATION) {
+                const data = JSON.parse(cached);
+                if (data.tracks && data.tracks.length) {
+                    allTracks = data.tracks;
+                    allArtists = data.artists || [];
+                    currentOffset = allTracks.length;
+                    hasMoreTracks = data.hasMore || false;
+                    rebuildAlbumsMap();
+                    return true;
+                }
+            }
+        } catch(e) {}
+        return false;
+    }
+    
+    function saveToCache() {
+        try {
+            const cacheData = {
+                tracks: allTracks,
+                artists: allArtists,
+                hasMore: hasMoreTracks,
+                timestamp: Date.now()
+            };
+            localStorage.setItem(CACHE_KEY, JSON.stringify(cacheData));
+            localStorage.setItem(CACHE_TIME_KEY, Date.now().toString());
+        } catch(e) {}
+    }
+    
+    function rebuildAlbumsMap() {
+        albumsMap.clear();
+        allTracks.forEach(t => {
+            if (!albumsMap.has(t.albumId)) {
+                albumsMap.set(t.albumId, {
+                    id: t.albumId,
+                    title: t.album,
+                    cover: t.albumCover,
+                    year: t.albumYear,
+                    artistId: t.artistId,
+                    artistName: t.artist,
+                    tracks: []
+                });
+            }
+            albumsMap.get(t.albumId).tracks.push(t);
+        });
+        for (let album of albumsMap.values()) {
+            album.tracks.sort((a,b) => (a.trackNumber||0) - (b.trackNumber||0));
+        }
     }
 
     function loadStorage() {
@@ -386,12 +470,15 @@
             }
         }
     }
+    
     function saveFav() {
         localStorage.setItem('wave_fav_order', JSON.stringify(favoritesOrder))
     }
+    
     function isFav(id) {
         return favoritesSet.has(id)
     }
+    
     function toggleFav(id) {
         if (favoritesSet.has(id)) {
             favoritesSet.delete(id)
@@ -408,77 +495,183 @@
         updatePlayerFavUI()
     }
 
-    async function fetchTracksAndAlbums() {
+    // Получение общего количества треков
+    async function getTotalTracksCount() {
+        const { count, error } = await supabase
+            .from('tracks')
+            .select('*', { count: 'exact', head: true });
+        if (!error) return count;
+        return 0;
+    }
+
+    async function fetchTracksAndAlbums(offset = 0, limit = PAGE_SIZE) {
         const { data: tracksData, error: tracksErr } = await supabase
             .from('tracks')
             .select(`*, albums ( id, title, cover_url, release_year, artist:artists ( id, name, photo_url, bio ) )`)
             .order('created_at', { ascending: false })
-        if (tracksErr) { console.error(tracksErr); return [] }
+            .range(offset, offset + limit - 1);
+            
+        if (tracksErr) { 
+            console.error(tracksErr); 
+            return [];
+        }
+        
         const tracks = tracksData.map(t => ({
             id: t.id,
             title: t.title,
-            artist: t.albums.artist.name,
-            artistId: t.albums.artist.id,
-            artistPhoto: t.albums.artist.photo_url,
-            artistBio: t.albums.artist.bio,
-            albumId: t.albums.id,
-            album: t.albums.title,
-            albumCover: t.albums.cover_url,
-            albumYear: t.albums.release_year,
+            artist: t.albums?.artist?.name || 'Unknown',
+            artistId: t.albums?.artist?.id,
+            artistPhoto: t.albums?.artist?.photo_url,
+            artistBio: t.albums?.artist?.bio,
+            albumId: t.albums?.id,
+            album: t.albums?.title,
+            albumCover: t.albums?.cover_url,
+            albumYear: t.albums?.release_year,
             audioUrl: t.audio_url,
             duration: t.duration,
             trackNumber: t.track_number
-        }))
-        const albumsMapLocal = new Map()
-        tracks.forEach(t => {
-            if (!albumsMapLocal.has(t.albumId)) {
-                albumsMapLocal.set(t.albumId, {
-                    id: t.albumId,
-                    title: t.album,
-                    cover: t.albumCover,
-                    year: t.albumYear,
-                    artistId: t.artistId,
-                    artistName: t.artist,
-                    tracks: []
-                })
-            }
-            albumsMapLocal.get(t.albumId).tracks.push(t)
-        })
-        for (let album of albumsMapLocal.values()) {
-            album.tracks.sort((a,b) => (a.trackNumber||0) - (b.trackNumber||0))
-        }
-        albumsMap = albumsMapLocal
-        return tracks
+        }));
+        return tracks;
     }
 
     async function fetchArtists() {
-        const { data, error } = await supabase.from('artists').select('*').order('name')
+        const { data, error } = await supabase.from('artists').select('*').order('name').limit(50)
         if (error) { console.error(error); return [] }
         return data
     }
+    
+    // Загрузка следующей порции треков
+    async function loadMoreTracks() {
+        if (isLoadingMore || !hasMoreTracks) return;
+        
+        isLoadingMore = true;
+        const loadMoreBtn = document.getElementById('loadMoreBtn');
+        if (loadMoreBtn) {
+            loadMoreBtn.classList.add('loading');
+            loadMoreBtn.innerHTML = 'Загрузка... ';
+        }
+        
+        try {
+            const newTracks = await fetchTracksAndAlbums(currentOffset, PAGE_SIZE);
+            
+            if (newTracks.length === 0) {
+                hasMoreTracks = false;
+                if (loadMoreBtn) {
+                    setTimeout(() => {
+                        const container = document.getElementById('loadMoreContainer');
+                        if (container) container.style.display = 'none';
+                    }, 2000);
+                }
+            } else {
+                allTracks.push(...newTracks);
+                currentOffset += newTracks.length;
+                hasMoreTracks = newTracks.length === PAGE_SIZE;
+                rebuildAlbumsMap();
+                saveToCache();
+                renderLibraryTracks();
+                renderFavorites();
+                generateShuffledRaveQueue();
+                updateWaveUI();
+                
+                if (!hasMoreTracks && loadMoreBtn) {
+                    loadMoreBtn.innerHTML = '✅ Все треки загружены ✅';
+                    setTimeout(() => {
+                        const container = document.getElementById('loadMoreContainer');
+                        if (container) container.style.display = 'none';
+                    }, 2000);
+                }
+            }
+        } catch (err) {
+            console.error('Error loading more tracks:', err);
+            if (loadMoreBtn) {
+                loadMoreBtn.innerHTML = '⚠️ Ошибка загрузки. Нажмите еще раз ⚠️';
+                loadMoreBtn.classList.remove('loading');
+            }
+        } finally {
+            isLoadingMore = false;
+            if (loadMoreBtn && hasMoreTracks) {
+                loadMoreBtn.classList.remove('loading');
+                loadMoreBtn.innerHTML = 'Загрузить еще';
+            }
+        }
+    }
 
     async function loadAllData() {
+        // Сначала пробуем загрузить из кэша
+        if (loadFromCache()) {
+            generateShuffledRaveQueue();
+            if (allTracks.length) {
+                currentWaveTrack = shuffledRaveQueue[0] || allTracks[0];
+            }
+            updateWaveUI();
+            renderAll();
+            renderArtistsInLibrary();
+            
+            // Проверяем, нужно ли показывать кнопку "Загрузить еще"
+            const loadMoreContainer = document.getElementById('loadMoreContainer');
+            if (loadMoreContainer && hasMoreTracks) {
+                loadMoreContainer.style.display = 'block';
+            }
+            
+            // Фоновая загрузка свежих данных
+            setTimeout(() => fetchFreshData(), 100);
+            return;
+        }
+        
+        await fetchFreshData();
+    }
+    
+    async function fetchFreshData() {
         try {
-            const [tracks, artists] = await Promise.all([fetchTracksAndAlbums(), fetchArtists()])
-            allTracks = tracks
-            allArtists = artists
-            generateShuffledRaveQueue()
+            totalTracksCount = await getTotalTracksCount();
+            
+            const [initialTracks, artists] = await Promise.all([
+                fetchTracksAndAlbums(0, PAGE_SIZE),
+                fetchArtists()
+            ]);
+            
+            allTracks = initialTracks;
+            allArtists = artists;
+            currentOffset = initialTracks.length;
+            hasMoreTracks = initialTracks.length === PAGE_SIZE;
+            
+            rebuildAlbumsMap();
+            saveToCache();
+            generateShuffledRaveQueue();
+            
             if (allTracks.length) {
                 currentWaveTrack = shuffledRaveQueue[0] || allTracks[0];
             } else {
                 currentWaveTrack = null;
             }
+            
             if (currentTrack && !allTracks.some(t => t.id === currentTrack.id)) {
-                currentTrack = null; isPlaying = false; updatePlayerUI()
+                currentTrack = null; isPlaying = false; updatePlayerUI();
             }
-            updateWaveUI()
-            renderAll()
-            renderArtistsInLibrary()
-        } catch(err) { console.error(err) }
+            
+            updateWaveUI();
+            renderAll();
+            renderArtistsInLibrary();
+            
+            // Показываем кнопку "Загрузить еще", если есть еще треки
+            const loadMoreContainer = document.getElementById('loadMoreContainer');
+            if (loadMoreContainer && hasMoreTracks) {
+                loadMoreContainer.style.display = 'block';
+            }
+            
+            // Если треков мало, фоном подгружаем еще
+            if (hasMoreTracks && allTracks.length < 100) {
+                setTimeout(() => loadMoreTracks(), 2000);
+            }
+        } catch(err) { 
+            console.error(err);
+        }
     }
 
-    function renderArtistsInLibrary() { /* ... полная функция ... */ 
+    function renderArtistsInLibrary() {
         const container = document.getElementById('libraryList')
+        if (!container) return;
+        
         const artistsHtml = `
             <div class="artists-horizontal" style="display:flex; gap:16px; overflow-x:auto; margin-bottom:20px; padding-bottom:8px;">
                 ${allArtists.map(a => `
@@ -488,8 +681,9 @@
                     </div>
                 `).join('')}
             </div>
+            <div id="libraryTracksContainer"></div>
         `
-        container.innerHTML = artistsHtml + `<div id="libraryTracksContainer"></div>`
+        container.innerHTML = artistsHtml
         document.querySelectorAll('.artist-card').forEach(card => {
             card.addEventListener('click', (e) => {
                 const artistId = parseInt(card.dataset.artistId)
@@ -503,7 +697,7 @@
         renderLibraryTracks()
     }
     
-    function renderLibraryTracks() { /* сокращено для ясности, но логика сохранена */ 
+    function renderLibraryTracks() {
         const container = document.getElementById('libraryTracksContainer')
         if (!container) return
         let filtered = allTracks
@@ -516,6 +710,16 @@
             container.innerHTML = '<div class="empty-state">нет треков</div>'
         } else {
             filtered.forEach(t => container.appendChild(createTrackElement(t, filtered, 'all')))
+        }
+        
+        // Обновляем информацию о количестве
+        const loadMoreContainer = document.getElementById('loadMoreContainer');
+        if (loadMoreContainer && !searchQuery) {
+            if (hasMoreTracks) {
+                loadMoreContainer.style.display = 'block';
+            } else {
+                loadMoreContainer.style.display = 'none';
+            }
         }
     }
     
@@ -551,7 +755,7 @@
         return div
     }
     
-    function renderFavorites() { /* полная реализация в исходном коде */ 
+    function renderFavorites() {
         const container = document.getElementById('favoritesList')
         let favTracks = allTracks.filter(t => favoritesSet.has(t.id))
         if (searchQuery) {
@@ -567,7 +771,7 @@
     }
     
     function renderAll() { renderLibraryTracks(); renderFavorites(); highlightCurrentTrack(); }
-    function highlightCurrentTrack() { /* обновляет класс playing */ 
+    function highlightCurrentTrack() {
         document.querySelectorAll('.track-item').forEach(el => el.classList.remove('playing'))
         if (currentTrack) {
             document.querySelectorAll('.track-item').forEach(el => {
@@ -577,7 +781,7 @@
         }
     }
     
-    function showArtistPage(artist, expandAlbumId = null) { /* полная функция сохранена */ 
+    function showArtistPage(artist, expandAlbumId = null) {
         currentArtist = artist
         const headerDiv = document.getElementById('artistHeader')
         const albumsDiv = document.getElementById('artistAlbums')
@@ -641,7 +845,23 @@
     function playNext() { if (currentQueue.length) { queueIndex = (queueIndex + 1) % currentQueue.length; playTrack(currentQueue[queueIndex], currentQueue, queueIndex); } }
     function playPrev() { if (currentQueue.length) { queueIndex = (queueIndex - 1 + currentQueue.length) % currentQueue.length; playTrack(currentQueue[queueIndex], currentQueue, queueIndex); } }
     function togglePlayPause() { if (!currentTrack) return; if (audio.paused) audio.play().then(() => { isPlaying = true; updatePlayerUI() }).catch(err => console.warn); else { audio.pause(); isPlaying = false; updatePlayerUI(); } }
-    function updatePlayerUI() { /* полная реализация, существующая */ const miniDiv = document.getElementById('miniPlayer'); if (currentTrack) { miniDiv.style.display = 'block'; document.getElementById('miniTitle').innerText = currentTrack.title; document.getElementById('miniArtist').innerText = currentTrack.artist; document.getElementById('miniArt').style.backgroundImage = `url('${currentTrack.albumCover || ''}')`; document.getElementById('fullTitle').innerText = currentTrack.title; document.getElementById('fullArtist').innerText = currentTrack.artist; document.getElementById('fullCover').style.backgroundImage = `url('${currentTrack.albumCover || ''}')`; } else miniDiv.style.display = 'none'; const playSvg = `<svg viewBox="0 0 24 24" stroke="currentColor" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>`; const pauseSvg = `<svg viewBox="0 0 24 24" stroke="currentColor" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>`; document.getElementById('miniPlayPause').innerHTML = (isPlaying && !audio.paused) ? pauseSvg : playSvg; document.getElementById('fullPlayPause').innerHTML = (isPlaying && !audio.paused) ? pauseSvg : playSvg; updatePlayerFavUI(); }
+    function updatePlayerUI() {
+        const miniDiv = document.getElementById('miniPlayer'); 
+        if (currentTrack) { 
+            miniDiv.style.display = 'block'; 
+            document.getElementById('miniTitle').innerText = currentTrack.title; 
+            document.getElementById('miniArtist').innerText = currentTrack.artist; 
+            document.getElementById('miniArt').style.backgroundImage = `url('${currentTrack.albumCover || ''}')`; 
+            document.getElementById('fullTitle').innerText = currentTrack.title; 
+            document.getElementById('fullArtist').innerText = currentTrack.artist; 
+            document.getElementById('fullCover').style.backgroundImage = `url('${currentTrack.albumCover || ''}')`; 
+        } else miniDiv.style.display = 'none'; 
+        const playSvg = `<svg viewBox="0 0 24 24" stroke="currentColor" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>`; 
+        const pauseSvg = `<svg viewBox="0 0 24 24" stroke="currentColor" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>`; 
+        document.getElementById('miniPlayPause').innerHTML = (isPlaying && !audio.paused) ? pauseSvg : playSvg; 
+        document.getElementById('fullPlayPause').innerHTML = (isPlaying && !audio.paused) ? pauseSvg : playSvg; 
+        updatePlayerFavUI(); 
+    }
     function updatePlayerFavUI() { if (!currentTrack) return; const isFavTrack = isFav(currentTrack.id); const miniLike = document.getElementById('miniLikeBtn'); const fullLike = document.getElementById('fullLikeBtn'); if (miniLike) { if (isFavTrack) miniLike.classList.add('active'); else miniLike.classList.remove('active'); } if (fullLike) { if (isFavTrack) fullLike.classList.add('active'); else fullLike.classList.remove('active'); } }
     function goToCurrentArtist() { if (!currentTrack || !currentTrack.artistId) return; const artist = allArtists.find(a => a.id === currentTrack.artistId); if (artist) { document.getElementById('fullPlayer').classList.remove('active'); showArtistPage(artist); switchTab('artist'); } }
     function formatTime(sec) { if (isNaN(sec)) return "0:00"; const m = Math.floor(sec/60); const s = Math.floor(sec%60); return `${m}:${s<10?'0'+s:s}`; }
@@ -650,7 +870,58 @@
     function playCurrentWave() { if (currentWaveTrack && shuffledRaveQueue.length) { const index = shuffledRaveQueue.findIndex(t => t.id === currentWaveTrack.id); if (index !== -1) playTrackWithContext(currentWaveTrack, shuffledRaveQueue, 'rave', 'RAVE'); else { generateShuffledRaveQueue(); const newIndex = shuffledRaveQueue.findIndex(t => t.id === currentWaveTrack.id); if (newIndex !== -1) playTrackWithContext(currentWaveTrack, shuffledRaveQueue, 'rave', 'RAVE'); else if (shuffledRaveQueue.length) playTrackWithContext(shuffledRaveQueue[0], shuffledRaveQueue, 'rave', 'RAVE'); } } }
     function switchTab(tabId) { document.querySelectorAll('.page').forEach(p => p.classList.remove('active')); document.getElementById(`${tabId}Page`).classList.add('active'); document.querySelectorAll('.tab-item').forEach(btn => btn.classList.remove('active')); document.querySelector(`[data-tab="${tabId}"]`).classList.add('active'); if (tabId === 'library') renderLibraryTracks(); if (tabId === 'favorites') renderFavorites(); const searchBtn = document.getElementById('searchToggleBtn'); if (tabId === 'wave') { if (searchBtn) searchBtn.style.display = 'none'; } else { if (searchBtn) searchBtn.style.display = 'inline-flex'; } if (tabId === 'artist' && !currentArtist) switchTab('library'); }
     function setupSearch() { const toggle = document.getElementById('searchToggleBtn'); const searchBar = document.getElementById('searchBar'); const input = document.getElementById('searchInput'); toggle.addEventListener('click', () => { searchBar.classList.toggle('active'); if (searchBar.classList.contains('active')) input.focus(); else { searchQuery = ""; input.value = ""; renderAll(); } }); input.addEventListener('input', (e) => { searchQuery = e.target.value; renderAll(); }); }
-    async function init() { loadStorage(); await loadAllData(); document.querySelectorAll('.tab-item').forEach(btn => btn.addEventListener('click', () => switchTab(btn.dataset.tab))); document.getElementById('waveCover').addEventListener('click', randomWaveTrack); document.getElementById('waveLikeBtn').addEventListener('click', () => toggleFav(currentWaveTrack.id)); document.getElementById('wavePlayBtn').addEventListener('click', playCurrentWave); document.getElementById('miniPlayPause').addEventListener('click', (e) => { e.stopPropagation(); togglePlayPause(); }); document.getElementById('miniNext').addEventListener('click', (e) => { e.stopPropagation(); playNext(); }); document.getElementById('miniPrev').addEventListener('click', (e) => { e.stopPropagation(); playPrev(); }); document.getElementById('miniLikeBtn').addEventListener('click', (e) => { e.stopPropagation(); if (currentTrack) toggleFav(currentTrack.id); }); document.getElementById('fullPlayPause').addEventListener('click', togglePlayPause); document.getElementById('fullNext').addEventListener('click', playNext); document.getElementById('fullPrev').addEventListener('click', playPrev); document.getElementById('closeFull').addEventListener('click', () => document.getElementById('fullPlayer').classList.remove('active')); document.getElementById('miniPlayer').addEventListener('click', (e) => { if (e.target.closest('.mini-ctrl') || e.target.closest('.mini-artist')) return; document.getElementById('fullPlayer').classList.add('active'); }); document.getElementById('fullLikeBtn').addEventListener('click', () => { if (currentTrack) toggleFav(currentTrack.id); }); document.getElementById('fullArtist').addEventListener('click', goToCurrentArtist); const fullBar = document.getElementById('fullProgressBar'); fullBar.addEventListener('click', (e) => { if (audio.duration && !isNaN(audio.duration)) { const rect = fullBar.getBoundingClientRect(); const percent = (e.clientX - rect.left) / rect.width; audio.currentTime = percent * audio.duration; } }); audio.volume = 0.8; const playlistInfoBtn = document.getElementById('playlistInfoBtn'); playlistInfoBtn.addEventListener('click', () => { document.getElementById('fullPlayer').classList.remove('active'); if (currentPlaylistType === 'favorites') switchTab('favorites'); else if (currentPlaylistType === 'album') { const album = Array.from(albumsMap.values()).find(a => a.id === currentPlaylistAlbumId); if (album && album.artistId) { const artist = allArtists.find(a => a.id === album.artistId); if (artist) { showArtistPage(artist, currentPlaylistAlbumId); switchTab('artist'); } } } else if (currentPlaylistType === 'rave') switchTab('wave'); else switchTab('library'); }); setupSearch(); updatePlayerUI(); if (document.querySelector('.tab-item.active').dataset.tab === 'wave') { document.getElementById('searchToggleBtn').style.display = 'none'; } setPlaylistContext('all', 'Все треки'); }
+    async function init() { 
+        loadStorage(); 
+        await loadAllData(); 
+        document.querySelectorAll('.tab-item').forEach(btn => btn.addEventListener('click', () => switchTab(btn.dataset.tab))); 
+        document.getElementById('waveCover').addEventListener('click', randomWaveTrack); 
+        document.getElementById('waveLikeBtn').addEventListener('click', () => toggleFav(currentWaveTrack.id)); 
+        document.getElementById('wavePlayBtn').addEventListener('click', playCurrentWave); 
+        document.getElementById('miniPlayPause').addEventListener('click', (e) => { e.stopPropagation(); togglePlayPause(); }); 
+        document.getElementById('miniNext').addEventListener('click', (e) => { e.stopPropagation(); playNext(); }); 
+        document.getElementById('miniPrev').addEventListener('click', (e) => { e.stopPropagation(); playPrev(); }); 
+        document.getElementById('miniLikeBtn').addEventListener('click', (e) => { e.stopPropagation(); if (currentTrack) toggleFav(currentTrack.id); }); 
+        document.getElementById('fullPlayPause').addEventListener('click', togglePlayPause); 
+        document.getElementById('fullNext').addEventListener('click', playNext); 
+        document.getElementById('fullPrev').addEventListener('click', playPrev); 
+        document.getElementById('closeFull').addEventListener('click', () => document.getElementById('fullPlayer').classList.remove('active')); 
+        document.getElementById('miniPlayer').addEventListener('click', (e) => { if (e.target.closest('.mini-ctrl') || e.target.closest('.mini-artist')) return; document.getElementById('fullPlayer').classList.add('active'); }); 
+        document.getElementById('fullLikeBtn').addEventListener('click', () => { if (currentTrack) toggleFav(currentTrack.id); }); 
+        document.getElementById('fullArtist').addEventListener('click', goToCurrentArtist); 
+        
+        const fullBar = document.getElementById('fullProgressBar'); 
+        fullBar.addEventListener('click', (e) => { if (audio.duration && !isNaN(audio.duration)) { const rect = fullBar.getBoundingClientRect(); const percent = (e.clientX - rect.left) / rect.width; audio.currentTime = percent * audio.duration; } }); 
+        
+        audio.volume = 0.8; 
+        
+        const playlistInfoBtn = document.getElementById('playlistInfoBtn'); 
+        playlistInfoBtn.addEventListener('click', () => { 
+            document.getElementById('fullPlayer').classList.remove('active'); 
+            if (currentPlaylistType === 'favorites') switchTab('favorites'); 
+            else if (currentPlaylistType === 'album') { 
+                const album = Array.from(albumsMap.values()).find(a => a.id === currentPlaylistAlbumId); 
+                if (album && album.artistId) { 
+                    const artist = allArtists.find(a => a.id === album.artistId); 
+                    if (artist) { showArtistPage(artist, currentPlaylistAlbumId); switchTab('artist'); } 
+                } 
+            } else if (currentPlaylistType === 'rave') switchTab('wave'); 
+            else switchTab('library'); 
+        }); 
+        
+        // Кнопка "Загрузить еще"
+        const loadMoreBtn = document.getElementById('loadMoreBtn');
+        if (loadMoreBtn) {
+            loadMoreBtn.addEventListener('click', loadMoreTracks);
+        }
+        
+        setupSearch(); 
+        updatePlayerUI(); 
+        if (document.querySelector('.tab-item.active').dataset.tab === 'wave') { 
+            document.getElementById('searchToggleBtn').style.display = 'none'; 
+        } 
+        setPlaylistContext('all', 'Все треки'); 
+    }
+    
     function escapeHtml(str) { if (!str) return ''; return str.replace(/[&<>]/g, m => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;' }[m])); }
     init()
 </script>
