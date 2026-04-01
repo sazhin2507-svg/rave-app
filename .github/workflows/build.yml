@@ -27,9 +27,6 @@ jobs:
           distribution: 'temurin'
           java-version: '21'
 
-      - name: Verify Java version
-        run: java -version
-
       - name: Install Capacitor
         run: |
           npm init -y
@@ -53,6 +50,16 @@ jobs:
 
       - name: Sync Capacitor
         run: npx cap sync
+
+      - name: Copy app icons
+        run: |
+          if [ -d "app-icons" ]; then
+            echo "📱 Copying app icons..."
+            cp -r app-icons/* android/app/src/main/res/
+            ls -la android/app/src/main/res/
+          else
+            echo "⚠️ No app-icons folder found"
+          fi
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
