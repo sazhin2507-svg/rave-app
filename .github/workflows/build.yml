@@ -27,6 +27,14 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
+      - name: Set Java 17 as default
+        run: |
+          echo "JAVA_HOME=$JAVA_HOME_17_X64" >> $GITHUB_ENV
+          echo "PATH=$JAVA_HOME_17_X64/bin:$PATH" >> $GITHUB_ENV
+
+      - name: Verify Java version
+        run: java -version
+
       - name: Install Capacitor
         run: |
           npm init -y
@@ -50,6 +58,11 @@ jobs:
 
       - name: Sync Capacitor
         run: npx cap sync
+
+      - name: Fix Gradle Java version
+        run: |
+          cd android
+          echo "org.gradle.java.home=$JAVA_HOME_17_X64" >> gradle.properties
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
