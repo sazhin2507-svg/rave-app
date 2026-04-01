@@ -28,7 +28,13 @@ jobs:
           npm install @capacitor-community/media
 
       - name: Init Capacitor
-        run: npx cap init RAVE com.rave.app --web-dir .
+        run: npx cap init RAVE com.rave.app --web-dir ./www
+
+      - name: Create web directory and copy files
+        run: |
+          mkdir -p www
+          cp index.html www/
+          cp -r * www/ 2>/dev/null || true
 
       - name: Add Android platform
         run: npx cap add android
