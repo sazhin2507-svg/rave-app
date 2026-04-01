@@ -310,15 +310,18 @@
     const SUPABASE_ANON_KEY = 'sb_publishable_-c2SB81GbdIS-thI0hyLzA_yZ78U7pD'
     const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
 
-    // ========== ПЛАГИН ДЛЯ ФОНОВОЙ МУЗЫКИ ==========
+    // ========== ПЛАГИН ДЛЯ ФОНОВОЙ МУЗЫКИ (упрощённая версия) ==========
     let MediaPlugin = null;
-    if (window.Capacitor && Capacitor.isNativePlatform()) {
-        import('https://unpkg.com/@capacitor-community/media@latest/dist/esm/index.js').then(module => {
-            MediaPlugin = module.Media;
-            console.log('Media plugin loaded');
-        }).catch(err => console.warn('Media plugin not available:', err));
+    
+    // Пытаемся подключить плагин сразу
+    try {
+        const { Media } = await import('https://unpkg.com/@capacitor-community/media@latest/dist/esm/index.js');
+        MediaPlugin = Media;
+        console.log('✅ Media plugin loaded successfully');
+    } catch(e) {
+        console.warn('⚠️ Media plugin not available (web mode):', e);
     }
-    // ===============================================
+    // ===================================================================
 
     let allTracks = []
     let allArtists = []
@@ -632,7 +635,7 @@
     function updatePlaylistInfoButton() { const btn = document.getElementById('playlistInfoBtn'); if (btn) btn.innerText = `Сейчас играет — ${currentPlaylistName}`; }
     function playTrackWithContext(track, contextTracks, type, name) { if (!track) return; const index = contextTracks.findIndex(t => t.id === track.id); if (index === -1) return; if (type === 'album') setPlaylistContext('album', name, currentPlaylistAlbumId, currentPlaylistArtistId); else if (type === 'favorites') setPlaylistContext('favorites', 'Любимое'); else if (type === 'rave') setPlaylistContext('rave', 'RAVE'); else setPlaylistContext('all', 'Все треки'); playTrack(track, contextTracks, index); }
     
-    // ========== ОСНОВНАЯ ФУНКЦИЯ ВОСПРОИЗВЕДЕНИЯ (С ПЛАГИНОМ) ==========
+    // ========== ОСНОВНАЯ ФУНКЦИЯ ВОСПРОИЗВЕДЕНИЯ ==========
     async function playTrack(track, queue, idx) {
         if (!track) return;
         currentTrack = track;
@@ -642,7 +645,7 @@
         audio.src = track.audioUrl;
         audio.load();
 
-        // СОЗДАЁМ УВЕДОМЛЕНИЕ С КНОПКАМИ
+        // СОЗДАЁМ УВЕДОМЛЕНИЕ (если плагин загружен)
         if (MediaPlugin) {
             try {
                 await MediaPlugin.create({
@@ -652,7 +655,12 @@
                     duration: track.duration || 180,
                     isPlaying: true
                 });
-            } catch(e) { console.warn('Media create error:', e); }
+                console.log('✅ Media notification created for:', track.title);
+            } catch(e) { 
+                console.warn('⚠️ Media create error:', e); 
+            }
+        } else {
+            console.log('⚠️ MediaPlugin not available, notification not created');
         }
 
         audio.play().then(() => {
@@ -668,8 +676,8 @@
         if (currentArtist) renderCurrentArtistPage();
         updatePlayerFavUI();
     }
-    // ===================================================================
     
+    let mediaEventsAdded = false;
     function setupAudioEvents() {
         audio.ontimeupdate = () => {
             if (audio.duration) {
@@ -679,7 +687,6 @@
                 document.getElementById('fullCurrent').innerText = formatTime(audio.currentTime);
                 document.getElementById('fullDuration').innerText = formatTime(audio.duration);
                 
-                // ОБНОВЛЯЕМ ПОЗИЦИЮ ДЛЯ УВЕДОМЛЕНИЯ
                 if (MediaPlugin && audio.duration) {
                     MediaPlugin.update({ 
                         position: audio.currentTime, 
@@ -694,26 +701,32 @@
             document.getElementById('fullDuration').innerText = formatTime(audio.duration);
         };
         
-        // ПОДПИСКА НА КНОПКИ ИЗ УВЕДОМЛЕНИЯ
-        if (MediaPlugin && !window._mediaEventsAdded) {
-            window._mediaEventsAdded = true;
+        // ПОДПИСКА НА КНОПКИ (только один раз)
+        if (MediaPlugin && !mediaEventsAdded) {
+            mediaEventsAdded = true;
+            console.log('🎵 Setting up media event listeners');
             MediaPlugin.addListener('play', () => {
+                console.log('📱 Play button pressed from notification');
                 if (audio.paused) {
                     audio.play().catch(e => console.warn(e));
                 }
             });
             MediaPlugin.addListener('pause', () => {
+                console.log('📱 Pause button pressed from notification');
                 if (!audio.paused) {
                     audio.pause();
                 }
             });
             MediaPlugin.addListener('next', () => {
+                console.log('📱 Next button pressed from notification');
                 playNext();
             });
             MediaPlugin.addListener('previous', () => {
+                console.log('📱 Previous button pressed from notification');
                 playPrev();
             });
             MediaPlugin.addListener('seekTo', (data) => {
+                console.log('📱 Seek to:', data.position);
                 if (audio.duration) {
                     audio.currentTime = data.position;
                 }
@@ -909,6 +922,13 @@
             document.getElementById('searchToggleBtn').style.display = 'none';
         }
         setPlaylistContext('all', 'Все треки');
+        
+        // Выводим информацию о плагине в консоль (для отладки)
+        if (MediaPlugin) {
+            console.log('🎵 Media plugin is ready! Notifications will work.');
+        } else {
+            console.log('⚠️ Media plugin not loaded. Playing in browser mode.');
+        }
     }
     
     function escapeHtml(str) {
