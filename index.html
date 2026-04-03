@@ -839,6 +839,9 @@
         });
         
         history.replaceState({ type: 'root' }, '');
+        
+        // Делаем handleBack доступной глобально для Capacitor
+        window.handleBack = handleBack;
     })();
 
     // ---------- ИНИЦИАЛИЗАЦИЯ ----------
@@ -948,6 +951,27 @@
         }
     }
     init();
+</script>
+
+<!-- Интеграция с Capacitor App plugin для обработки кнопки "Назад" -->
+<script>
+    (function() {
+        // Проверяем, запущено ли приложение в Capacitor
+        if (typeof window.Capacitor !== 'undefined' && window.Capacitor.isNativePlatform()) {
+            // Импортируем плагин App (динамический импорт)
+            import('@capacitor/app').then(({ App }) => {
+                // Добавляем слушатель нажатия кнопки "Назад"
+                App.addListener('backButton', () => {
+                    // Вызываем глобальную функцию handleBack
+                    if (typeof window.handleBack === 'function') {
+                        window.handleBack();
+                    }
+                    // Возвращаем success, чтобы нативное действие не закрыло приложение
+                    return { success: true };
+                });
+            }).catch(err => console.warn('Capacitor App plugin not loaded', err));
+        }
+    })();
 </script>
 </body>
 </html>
