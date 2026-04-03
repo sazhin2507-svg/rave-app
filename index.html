@@ -5,7 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
     <title>RAVE — музыкальный стриминг</title>
     <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:opsz,wght@14..32,300;14..32,400;14..32,500;14..32,600;14..32,700&display=swap" rel="stylesheet">
-    <script src="https://cdn.jsdelivr.net/npm/idb@8.0.0/build/umd.js"></script>
     <style>
         * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
         body { background: #0a0a0f; font-family: 'Inter', sans-serif; color: #fff; overflow-x: hidden; padding-bottom: 100px; }
@@ -308,16 +307,9 @@
 <div id="deleteConfirmModal" class="modal-overlay"><div class="modal-container"><h3>Удалить плейлист</h3><p style="margin-bottom: 24px; text-align: center;">Вы уверены, что хотите удалить этот плейлист?</p><div class="modal-buttons"><button class="modal-btn modal-btn-secondary" id="cancelDeleteBtn">Отмена</button><button class="modal-btn modal-btn-primary" id="confirmDeleteBtn">Удалить</button></div></div></div>
 <div id="offlineOverlay" class="offline-overlay" style="display: none;"><h2>📡 Упс, кажется нет интернета</h2><p style="margin: 16px 0;">послушайте скаченное</p><button id="goToDownloadedBtn">Перейти в скачанное</button></div>
 
-<script type="module">
-    import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm'
-    const SUPABASE_URL = 'https://epmhhcpmouimxyivlumi.supabase.co'
-    const SUPABASE_ANON_KEY = 'sb_publishable_-c2SB81GbdIS-thI0hyLzA_yZ78U7pD'
-    const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
-
-    // ---------- ОРИГИНАЛЬНЫЕ ПЕРЕМЕННЫЕ ----------
-    const CACHE_KEY = 'rave_cache';
-    const CACHE_TIME_KEY = 'rave_cache_time';
-    const CACHE_DURATION = 5 * 60 * 1000;
+<script>
+    // ---------- ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ ----------
+    let supabase = null;
     let allTracks = [], allArtists = [], albumsMap = new Map(), favoritesOrder = [], favoritesSet = new Set(), favoriteTracksCache = [];
     let currentTrack = null, isPlaying = false, currentQueue = [], queueIndex = 0, currentWaveTrack = null;
     let searchQuery = "", audio = new Audio(), currentArtist = null, albumExpandedState = new Map(), artistAlbumsCache = new Map();
@@ -327,63 +319,30 @@
     let userPlaylists = [], currentPlaylist = null, pendingDeletePlaylistId = null, currentSearchContext = 'library';
     audio.preload = 'metadata';
 
-    // ---------- НОВЫЕ ПЕРЕМЕННЫЕ (скачивание, лайк альбомов) ----------
     const DB_NAME = 'rave_downloads';
     const STORE_NAME = 'tracks';
-    let dbPromise = null;
+    let db = null;
     let likedAlbums = new Set();
     let downloadedTrackIds = new Set();
 
-    // ---------- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ (ОРИГИНАЛЬНЫЕ) ----------
+    // ---------- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ (НЕ ЗАВИСЯТ ОТ SUPABASE) ----------
     function shuffleArray(arr) { const copy = [...arr]; for (let i = copy.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [copy[i], copy[j]] = [copy[j], copy[i]]; } return copy; }
     function generateShuffledRaveQueue() { if (!allTracks.length) { shuffledRaveQueue = []; return; } shuffledRaveQueue = shuffleArray(allTracks); }
-    function loadFromCache() { try { const cached = localStorage.getItem(CACHE_KEY); const cacheTime = localStorage.getItem(CACHE_TIME_KEY); if (cached && cacheTime && (Date.now() - parseInt(cacheTime)) < CACHE_DURATION) { const data = JSON.parse(cached); if (data.tracks && data.tracks.length) { allTracks = data.tracks; allArtists = data.artists || []; currentOffset = allTracks.length; hasMoreTracks = data.hasMore || false; rebuildAlbumsMap(); return true; } } } catch(e) {} return false; }
-    function saveToCache() { try { const cacheData = { tracks: allTracks, artists: allArtists, hasMore: hasMoreTracks, timestamp: Date.now() }; localStorage.setItem(CACHE_KEY, JSON.stringify(cacheData)); localStorage.setItem(CACHE_TIME_KEY, Date.now().toString()); } catch(e) {} }
+    function loadFromCache() { try { const cached = localStorage.getItem('rave_cache'); const cacheTime = localStorage.getItem('rave_cache_time'); if (cached && cacheTime && (Date.now() - parseInt(cacheTime)) < 5*60*1000) { const data = JSON.parse(cached); if (data.tracks && data.tracks.length) { allTracks = data.tracks; allArtists = data.artists || []; currentOffset = allTracks.length; hasMoreTracks = data.hasMore || false; rebuildAlbumsMap(); return true; } } } catch(e) {} return false; }
+    function saveToCache() { try { const cacheData = { tracks: allTracks, artists: allArtists, hasMore: hasMoreTracks, timestamp: Date.now() }; localStorage.setItem('rave_cache', JSON.stringify(cacheData)); localStorage.setItem('rave_cache_time', Date.now().toString()); } catch(e) {} }
     function rebuildAlbumsMap() { albumsMap.clear(); allTracks.forEach(t => { if (!albumsMap.has(t.albumId)) { albumsMap.set(t.albumId, { id: t.albumId, title: t.album, cover: t.albumCover, year: t.albumYear, artistId: t.artistId, artistName: t.artist, tracks: [] }); } albumsMap.get(t.albumId).tracks.push(t); }); for (let album of albumsMap.values()) { album.tracks.sort((a,b) => (a.trackNumber||0) - (b.trackNumber||0)); } }
     function loadStorage() { const stored = localStorage.getItem('wave_fav_order'); if (stored) { try { favoritesOrder = JSON.parse(stored); favoritesSet = new Set(favoritesOrder); } catch(e) {} } else { const old = localStorage.getItem('wave_fav'); if (old) { try { const oldArr = JSON.parse(old); if (Array.isArray(oldArr)) favoritesOrder = oldArr; else favoritesOrder = []; } catch(e) {} favoritesSet = new Set(favoritesOrder); localStorage.removeItem('wave_fav'); } } }
     function saveFav() { localStorage.setItem('wave_fav_order', JSON.stringify(favoritesOrder)); }
     function isFav(id) { return favoritesSet.has(id); }
-    async function refreshFavoriteTracksCache() { const favTracks = []; for (const id of favoritesOrder) { const track = allTracks.find(t => t.id === id); if (track) { favTracks.push(track); } else { const { data, error } = await supabase.from('tracks').select(`*, albums!inner ( id, title, cover_url, release_year, artist:artists ( id, name, photo_url, bio ) )`).eq('id', id).single(); if (!error && data && data.albums?.artist?.name) { const newTrack = { id: data.id, title: data.title, artist: data.albums.artist.name, artistId: data.albums.artist.id, artistPhoto: data.albums.artist.photo_url, artistBio: data.albums.artist.bio, albumId: data.albums.id, album: data.albums.title, albumCover: data.albums.cover_url, albumYear: data.albums.release_year, audioUrl: data.audio_url, duration: data.duration, trackNumber: data.track_number }; favTracks.push(newTrack); if (!allTracks.some(t => t.id === id)) allTracks.push(newTrack); } } } favoriteTracksCache = favTracks; }
+    async function refreshFavoriteTracksCache() { const favTracks = []; for (const id of favoritesOrder) { const track = allTracks.find(t => t.id === id); if (track) { favTracks.push(track); } else if (supabase) { const { data, error } = await supabase.from('tracks').select(`*, albums!inner ( id, title, cover_url, release_year, artist:artists ( id, name, photo_url, bio ) )`).eq('id', id).single(); if (!error && data && data.albums?.artist?.name) { const newTrack = { id: data.id, title: data.title, artist: data.albums.artist.name, artistId: data.albums.artist.id, artistPhoto: data.albums.artist.photo_url, artistBio: data.albums.artist.bio, albumId: data.albums.id, album: data.albums.title, albumCover: data.albums.cover_url, albumYear: data.albums.release_year, audioUrl: data.audio_url, duration: data.duration, trackNumber: data.track_number }; favTracks.push(newTrack); if (!allTracks.some(t => t.id === id)) allTracks.push(newTrack); } } } favoriteTracksCache = favTracks; }
     async function toggleFav(id) { if (favoritesSet.has(id)) { favoritesSet.delete(id); const index = favoritesOrder.indexOf(id); if (index !== -1) favoritesOrder.splice(index, 1); } else { favoritesSet.add(id); favoritesOrder.unshift(id); } saveFav(); await refreshFavoriteTracksCache(); renderAll(); updateWaveUI(); if (currentArtist) renderArtistPageWithoutReload(currentArtist); updatePlayerFavUI(); renderAllPlaylistsGrid(); const activePage = document.querySelector('.page.active').id; if (activePage === 'favoritesPage') renderFavorites(); else if (activePage === 'playlistPage' && currentPlaylist) renderCurrentPlaylistPage(); }
-    async function fetchTracksBySearch(searchText) { if (!searchText.trim()) return []; const { data: tracksData } = await supabase.from('tracks').select(`*, albums!inner ( id, title, cover_url, release_year, artist:artists ( id, name, photo_url, bio ) )`).ilike('title', `%${searchText}%`).limit(50); const { data: artistTracksData } = await supabase.from('tracks').select(`*, albums!inner ( id, title, cover_url, release_year, artist:artists ( id, name, photo_url, bio ) )`).ilike('albums.artist.name', `%${searchText}%`).limit(50); const allResults = [...(tracksData || []), ...(artistTracksData || [])]; const uniqueResults = []; const seenIds = new Set(); for (const t of allResults) { if (!seenIds.has(t.id)) { seenIds.add(t.id); const artistName = t.albums?.artist?.name; if (!artistName || artistName === 'Unknown') continue; uniqueResults.push({ id: t.id, title: t.title, artist: artistName, artistId: t.albums?.artist?.id, artistPhoto: t.albums?.artist?.photo_url, artistBio: t.albums?.artist?.bio, albumId: t.albums?.id, album: t.albums?.title, albumCover: t.albums?.cover_url, albumYear: t.albums?.release_year, audioUrl: t.audio_url, duration: t.duration, trackNumber: t.track_number }); } } return uniqueResults.filter(track => track.audioUrl && track.albumCover); }
-    async function fetchTracksAndAlbums(offset = 0, limit = PAGE_SIZE) { const { data: tracksData, error: tracksErr } = await supabase.from('tracks').select(`*, albums!inner ( id, title, cover_url, release_year, artist:artists ( id, name, photo_url, bio ) )`).order('created_at', { ascending: false }).range(offset, offset + limit - 1); if (tracksErr) { console.error(tracksErr); return []; } const tracks = tracksData.map(t => ({ id: t.id, title: t.title, artist: t.albums?.artist?.name || 'Unknown', artistId: t.albums?.artist?.id, artistPhoto: t.albums?.artist?.photo_url, artistBio: t.albums?.artist?.bio, albumId: t.albums?.id, album: t.albums?.title, albumCover: t.albums?.cover_url, albumYear: t.albums?.release_year, audioUrl: t.audio_url, duration: t.duration, trackNumber: t.track_number })); return tracks; }
-    async function fetchArtists() { const { data, error } = await supabase.from('artists').select('*').order('name').limit(50); if (error) { console.error(error); return []; } return data; }
-    async function fetchArtistAlbums(artistId) { if (artistAlbumsCache.has(artistId)) return artistAlbumsCache.get(artistId); const { data: albumsData, error } = await supabase.from('albums').select(`*, artist:artists ( id, name, photo_url, bio )`).eq('artist_id', artistId).order('release_year', { ascending: false }); if (error) { console.error(error); return []; } const albums = []; for (const album of albumsData) { const { data: tracksData } = await supabase.from('tracks').select('*').eq('album_id', album.id).order('track_number', { ascending: true }); albums.push({ id: album.id, title: album.title, cover: album.cover_url, year: album.release_year, artistId: album.artist_id, artistName: album.artist?.name, tracks: (tracksData || []).map(t => ({ id: t.id, title: t.title, artist: album.artist?.name || 'Unknown', artistId: album.artist_id, albumId: album.id, album: album.title, albumCover: album.cover_url, albumYear: album.release_year, audioUrl: t.audio_url, duration: t.duration, trackNumber: t.track_number })) }); } artistAlbumsCache.set(artistId, albums); return albums; }
+    async function fetchTracksBySearch(searchText) { if (!supabase || !searchText.trim()) return []; const { data: tracksData } = await supabase.from('tracks').select(`*, albums!inner ( id, title, cover_url, release_year, artist:artists ( id, name, photo_url, bio ) )`).ilike('title', `%${searchText}%`).limit(50); const { data: artistTracksData } = await supabase.from('tracks').select(`*, albums!inner ( id, title, cover_url, release_year, artist:artists ( id, name, photo_url, bio ) )`).ilike('albums.artist.name', `%${searchText}%`).limit(50); const allResults = [...(tracksData || []), ...(artistTracksData || [])]; const uniqueResults = []; const seenIds = new Set(); for (const t of allResults) { if (!seenIds.has(t.id)) { seenIds.add(t.id); const artistName = t.albums?.artist?.name; if (!artistName || artistName === 'Unknown') continue; uniqueResults.push({ id: t.id, title: t.title, artist: artistName, artistId: t.albums?.artist?.id, artistPhoto: t.albums?.artist?.photo_url, artistBio: t.albums?.artist?.bio, albumId: t.albums?.id, album: t.albums?.title, albumCover: t.albums?.cover_url, albumYear: t.albums?.release_year, audioUrl: t.audio_url, duration: t.duration, trackNumber: t.track_number }); } } return uniqueResults.filter(track => track.audioUrl && track.albumCover); }
+    async function fetchTracksAndAlbums(offset = 0, limit = PAGE_SIZE) { if (!supabase) return []; const { data: tracksData, error: tracksErr } = await supabase.from('tracks').select(`*, albums!inner ( id, title, cover_url, release_year, artist:artists ( id, name, photo_url, bio ) )`).order('created_at', { ascending: false }).range(offset, offset + limit - 1); if (tracksErr) { console.error(tracksErr); return []; } const tracks = tracksData.map(t => ({ id: t.id, title: t.title, artist: t.albums?.artist?.name || 'Unknown', artistId: t.albums?.artist?.id, artistPhoto: t.albums?.artist?.photo_url, artistBio: t.albums?.artist?.bio, albumId: t.albums?.id, album: t.albums?.title, albumCover: t.albums?.cover_url, albumYear: t.albums?.release_year, audioUrl: t.audio_url, duration: t.duration, trackNumber: t.track_number })); return tracks; }
+    async function fetchArtists() { if (!supabase) return []; const { data, error } = await supabase.from('artists').select('*').order('name').limit(50); if (error) { console.error(error); return []; } return data; }
+    async function fetchArtistAlbums(artistId) { if (!supabase) return []; if (artistAlbumsCache.has(artistId)) return artistAlbumsCache.get(artistId); const { data: albumsData, error } = await supabase.from('albums').select(`*, artist:artists ( id, name, photo_url, bio )`).eq('artist_id', artistId).order('release_year', { ascending: false }); if (error) { console.error(error); return []; } const albums = []; for (const album of albumsData) { const { data: tracksData } = await supabase.from('tracks').select('*').eq('album_id', album.id).order('track_number', { ascending: true }); albums.push({ id: album.id, title: album.title, cover: album.cover_url, year: album.release_year, artistId: album.artist_id, artistName: album.artist?.name, tracks: (tracksData || []).map(t => ({ id: t.id, title: t.title, artist: album.artist?.name || 'Unknown', artistId: album.artist_id, albumId: album.id, album: album.title, albumCover: album.cover_url, albumYear: album.release_year, audioUrl: t.audio_url, duration: t.duration, trackNumber: t.track_number })) }); } artistAlbumsCache.set(artistId, albums); return albums; }
     async function loadMoreTracks() { if (isLoadingMore || !hasMoreTracks || isSearchActive) return; if (!navigator.onLine) return; isLoadingMore = true; const loadMoreBtn = document.getElementById('loadMoreBtn'); if (loadMoreBtn) { loadMoreBtn.classList.add('loading'); loadMoreBtn.innerHTML = 'Загрузка... '; } try { const newTracks = await fetchTracksAndAlbums(currentOffset, PAGE_SIZE); if (newTracks.length === 0) { hasMoreTracks = false; if (loadMoreBtn) setTimeout(() => { const container = document.getElementById('loadMoreContainer'); if (container) container.style.display = 'none'; }, 2000); } else { allTracks.push(...newTracks); currentOffset += newTracks.length; hasMoreTracks = newTracks.length === PAGE_SIZE; rebuildAlbumsMap(); saveToCache(); if (!isSearchActive) renderLibraryTracks(); renderFavorites(); generateShuffledRaveQueue(); updateWaveUI(); if (!hasMoreTracks && loadMoreBtn) { loadMoreBtn.innerHTML = '✅ Все треки загружены ✅'; setTimeout(() => { const container = document.getElementById('loadMoreContainer'); if (container) container.style.display = 'none'; }, 2000); } } } catch (err) { console.error(err); if (loadMoreBtn) { loadMoreBtn.innerHTML = '⚠️ Ошибка загрузки. Нажмите еще раз ⚠️'; loadMoreBtn.classList.remove('loading'); } } finally { isLoadingMore = false; if (loadMoreBtn && hasMoreTracks && !isSearchActive) { loadMoreBtn.classList.remove('loading'); loadMoreBtn.innerHTML = 'Загрузить еще'; } } }
-    async function loadAllData() {
-        if (!navigator.onLine) {
-            if (loadFromCache()) {
-                generateShuffledRaveQueue();
-                if (allTracks.length) currentWaveTrack = shuffledRaveQueue[0] || allTracks[0];
-                await refreshFavoriteTracksCache();
-                updateWaveUI();
-                renderAll();
-                renderArtistsInLibrary();
-            }
-            return;
-        }
-        if (loadFromCache()) {
-            generateShuffledRaveQueue();
-            if (allTracks.length) currentWaveTrack = shuffledRaveQueue[0] || allTracks[0];
-            await refreshFavoriteTracksCache();
-            updateWaveUI();
-            renderAll();
-            renderArtistsInLibrary();
-            const loadMoreContainer = document.getElementById('loadMoreContainer');
-            if (loadMoreContainer && hasMoreTracks && !isSearchActive && navigator.onLine) loadMoreContainer.style.display = 'block';
-            if (navigator.onLine) setTimeout(() => fetchFreshData(), 100);
-        } else if (navigator.onLine) {
-            await fetchFreshData();
-        } else {
-            generateShuffledRaveQueue();
-            if (allTracks.length) currentWaveTrack = shuffledRaveQueue[0] || allTracks[0];
-            await refreshFavoriteTracksCache();
-            updateWaveUI();
-            renderAll();
-            renderArtistsInLibrary();
-        }
-    }
-    async function fetchFreshData() { if (!navigator.onLine) return; try { const [initialTracks, artists] = await Promise.all([ fetchTracksAndAlbums(0, PAGE_SIZE), fetchArtists() ]); allTracks = initialTracks; allArtists = artists; currentOffset = initialTracks.length; hasMoreTracks = initialTracks.length === PAGE_SIZE; rebuildAlbumsMap(); saveToCache(); generateShuffledRaveQueue(); if (allTracks.length) currentWaveTrack = shuffledRaveQueue[0] || allTracks[0]; else currentWaveTrack = null; if (currentTrack && !allTracks.some(t => t.id === currentTrack.id)) { currentTrack = null; isPlaying = false; updatePlayerUI(); } await refreshFavoriteTracksCache(); updateWaveUI(); renderAll(); renderArtistsInLibrary(); const loadMoreContainer = document.getElementById('loadMoreContainer'); if (loadMoreContainer && hasMoreTracks && !isSearchActive) loadMoreContainer.style.display = 'block'; if (hasMoreTracks && allTracks.length < 100) setTimeout(() => loadMoreTracks(), 2000); } catch(err) { console.error(err); } }
+    async function loadAllData() { if (!supabase) return; if (loadFromCache()) { generateShuffledRaveQueue(); if (allTracks.length) currentWaveTrack = shuffledRaveQueue[0] || allTracks[0]; await refreshFavoriteTracksCache(); updateWaveUI(); renderAll(); renderArtistsInLibrary(); const loadMoreContainer = document.getElementById('loadMoreContainer'); if (loadMoreContainer && hasMoreTracks && !isSearchActive && navigator.onLine) loadMoreContainer.style.display = 'block'; if (navigator.onLine) setTimeout(() => fetchFreshData(), 100); } else if (navigator.onLine) { await fetchFreshData(); } else { generateShuffledRaveQueue(); if (allTracks.length) currentWaveTrack = shuffledRaveQueue[0] || allTracks[0]; await refreshFavoriteTracksCache(); updateWaveUI(); renderAll(); renderArtistsInLibrary(); } }
+    async function fetchFreshData() { if (!supabase || !navigator.onLine) return; try { const [initialTracks, artists] = await Promise.all([ fetchTracksAndAlbums(0, PAGE_SIZE), fetchArtists() ]); allTracks = initialTracks; allArtists = artists; currentOffset = initialTracks.length; hasMoreTracks = initialTracks.length === PAGE_SIZE; rebuildAlbumsMap(); saveToCache(); generateShuffledRaveQueue(); if (allTracks.length) currentWaveTrack = shuffledRaveQueue[0] || allTracks[0]; else currentWaveTrack = null; if (currentTrack && !allTracks.some(t => t.id === currentTrack.id)) { currentTrack = null; isPlaying = false; updatePlayerUI(); } await refreshFavoriteTracksCache(); updateWaveUI(); renderAll(); renderArtistsInLibrary(); const loadMoreContainer = document.getElementById('loadMoreContainer'); if (loadMoreContainer && hasMoreTracks && !isSearchActive) loadMoreContainer.style.display = 'block'; if (hasMoreTracks && allTracks.length < 100) setTimeout(() => loadMoreTracks(), 2000); } catch(err) { console.error(err); } }
     async function performSearch(query) { if (!query.trim()) { isSearchActive = false; searchResults = []; const loadMoreContainer = document.getElementById('loadMoreContainer'); if (loadMoreContainer && hasMoreTracks && !isSearchActive && navigator.onLine) loadMoreContainer.style.display = 'block'; renderLibraryTracks(); return; } isSearchActive = true; isSearching = true; const loadMoreContainer = document.getElementById('loadMoreContainer'); if (loadMoreContainer) loadMoreContainer.style.display = 'none'; const libraryTracksContainer = document.getElementById('libraryTracksContainer'); if (libraryTracksContainer) libraryTracksContainer.innerHTML = '<div class="search-loading">Поиск треков...</div>'; try { searchResults = await fetchTracksBySearch(query); } catch (err) { searchResults = []; } finally { isSearching = false; renderLibraryTracks(); } }
     function performSearchInContext(query) { if (!query.trim()) { isSearchActive = false; if (currentSearchContext === 'library') { renderLibraryTracks(); const loadMoreContainer = document.getElementById('loadMoreContainer'); if (loadMoreContainer && hasMoreTracks && navigator.onLine) loadMoreContainer.style.display = 'block'; } else if (currentSearchContext === 'favorites') renderFavorites(); else if (currentSearchContext === 'playlist' && currentPlaylist) renderCurrentPlaylistPage(); return; } isSearchActive = true; if (currentSearchContext === 'library') { performSearch(query); } else if (currentSearchContext === 'favorites') { const filtered = favoriteTracksCache.filter(t => t.title.toLowerCase().includes(query.toLowerCase()) || t.artist.toLowerCase().includes(query.toLowerCase())); renderFavorites(filtered); } else if (currentSearchContext === 'playlist' && currentPlaylist) { const allPlaylistTracks = getPlaylistTracks(currentPlaylist); const filtered = allPlaylistTracks.filter(t => t.title.toLowerCase().includes(query.toLowerCase()) || t.artist.toLowerCase().includes(query.toLowerCase())); renderCurrentPlaylistPage(filtered); } }
     function renderArtistsInLibrary() { const container = document.getElementById('libraryList'); if (!container) return; const artistsHtml = `<div class="artists-horizontal" style="display:flex; gap:16px; overflow-x:auto; margin-bottom:20px; padding-bottom:8px;">${allArtists.map(a => `<div class="artist-card" data-artist-id="${a.id}" style="flex-shrink:0; text-align:center; cursor:pointer;"><div style="width:70px; height:70px; border-radius:50%; background-size:cover; background-position:center; background-color:#2a2a32; margin:0 auto 8px; background-image:url('${a.photo_url || ''}');"></div><div style="font-size:12px;">${escapeHtml(a.name)}</div></div>`).join('')}</div><div id="libraryTracksContainer" class="track-list"></div>`; container.innerHTML = artistsHtml; document.querySelectorAll('.artist-card').forEach(card => { card.addEventListener('click', () => { const artistId = parseInt(card.dataset.artistId); const artist = allArtists.find(a => a.id === artistId); if (artist) { showArtistPage(artist); switchTab('artist'); } }); }); renderLibraryTracks(); }
@@ -423,7 +382,7 @@
     function getPlaylistTracks(playlist) { return playlist.trackIds.map(id => allTracks.find(t => t.id === id)).filter(t => t); }
     function getPlaylistCover(playlist) { const tracks = getPlaylistTracks(playlist); if (tracks.length) { const lastTrack = tracks[tracks.length-1]; return lastTrack.albumCover || ''; } return ''; }
     function renderAllPlaylistsGrid() { const container = document.getElementById('allPlaylistsGrid'); if (!container) return; if (userPlaylists.length === 0) { container.innerHTML = '<div class="empty-state">У вас пока нет плейлистов. Создайте первый!</div>'; return; } container.innerHTML = userPlaylists.map(pl => { const coverUrl = getPlaylistCover(pl); return `<div class="playlist-card-large" data-playlist-id="${pl.id}"><div class="playlist-cover-large" style="background-image: url('${coverUrl || ''}'); background-color: #2a2a32;"></div><div class="playlist-name-large">${escapeHtml(pl.name)}</div><div class="playlist-track-count-large">${pl.trackIds.length} треков</div><button class="delete-playlist-btn" data-delete-id="${pl.id}"><svg width="14" height="14" viewBox="0 0 24 24" stroke="currentColor" fill="none"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg> Удалить</button></div>`; }).join(''); document.querySelectorAll('.playlist-card-large[data-playlist-id]').forEach(card => { const plId = parseInt(card.dataset.playlistId); card.addEventListener('click', async (e) => { if (e.target.closest('.delete-playlist-btn')) return; await openPlaylistPage(plId); }); }); document.querySelectorAll('.delete-playlist-btn').forEach(btn => { btn.addEventListener('click', (e) => { e.stopPropagation(); const plId = parseInt(btn.dataset.deleteId); pendingDeletePlaylistId = plId; document.getElementById('deleteConfirmModal').classList.add('active'); }); }); }
-    async function ensurePlaylistTracksLoaded(playlist) { const missingTrackIds = playlist.trackIds.filter(id => !allTracks.some(t => t.id === id)); if (missingTrackIds.length === 0) return; const container = document.getElementById('playlistTracksContainer'); if (container) container.innerHTML = '<div class="loading-spinner">Загрузка треков плейлиста...</div>'; const fetchedTracks = []; for (const trackId of missingTrackIds) { const { data, error } = await supabase.from('tracks').select(`*, albums!inner ( id, title, cover_url, release_year, artist:artists ( id, name, photo_url, bio ) )`).eq('id', trackId).single(); if (!error && data && data.albums?.artist?.name) { const newTrack = { id: data.id, title: data.title, artist: data.albums.artist.name, artistId: data.albums.artist.id, artistPhoto: data.albums.artist.photo_url, artistBio: data.albums.artist.bio, albumId: data.albums.id, album: data.albums.title, albumCover: data.albums.cover_url, albumYear: data.albums.release_year, audioUrl: data.audio_url, duration: data.duration, trackNumber: data.track_number }; fetchedTracks.push(newTrack); allTracks.push(newTrack); } } if (fetchedTracks.length) { rebuildAlbumsMap(); saveToCache(); generateShuffledRaveQueue(); await refreshFavoriteTracksCache(); } }
+    async function ensurePlaylistTracksLoaded(playlist) { if (!supabase) return; const missingTrackIds = playlist.trackIds.filter(id => !allTracks.some(t => t.id === id)); if (missingTrackIds.length === 0) return; const container = document.getElementById('playlistTracksContainer'); if (container) container.innerHTML = '<div class="loading-spinner">Загрузка треков плейлиста...</div>'; const fetchedTracks = []; for (const trackId of missingTrackIds) { const { data, error } = await supabase.from('tracks').select(`*, albums!inner ( id, title, cover_url, release_year, artist:artists ( id, name, photo_url, bio ) )`).eq('id', trackId).single(); if (!error && data && data.albums?.artist?.name) { const newTrack = { id: data.id, title: data.title, artist: data.albums.artist.name, artistId: data.albums.artist.id, artistPhoto: data.albums.artist.photo_url, artistBio: data.albums.artist.bio, albumId: data.albums.id, album: data.albums.title, albumCover: data.albums.cover_url, albumYear: data.albums.release_year, audioUrl: data.audio_url, duration: data.duration, trackNumber: data.track_number }; fetchedTracks.push(newTrack); allTracks.push(newTrack); } } if (fetchedTracks.length) { rebuildAlbumsMap(); saveToCache(); generateShuffledRaveQueue(); await refreshFavoriteTracksCache(); } }
     async function openPlaylistPage(playlistId) { const pl = userPlaylists.find(p => p.id === playlistId); if (!pl) return; currentPlaylist = pl; document.getElementById('playlistTitle').innerText = pl.name; const searchBar = document.getElementById('searchBar'); const searchInput = document.getElementById('searchInput'); if (searchBar) searchBar.classList.remove('active'); if (searchInput) searchInput.value = ''; isSearchActive = false; currentSearchContext = 'playlist'; await ensurePlaylistTracksLoaded(currentPlaylist); renderCurrentPlaylistPage(); switchTab('playlist'); }
     function renderCurrentPlaylistPage(filteredTracks = null) { const container = document.getElementById('playlistTracksContainer'); if (!container || !currentPlaylist) return; let tracks = filteredTracks !== null ? filteredTracks : getPlaylistTracks(currentPlaylist); container.innerHTML = ''; if (tracks.length === 0) { container.innerHTML = '<div class="empty-state">Нет треков. Добавьте из библиотеки</div>'; return; } tracks.forEach(track => { const div = createTrackElement(track, tracks, 'playlist'); const removeBtn = document.createElement('button'); removeBtn.className = 'action-icon'; removeBtn.innerHTML = '<svg viewBox="0 0 24 24" stroke="currentColor"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>'; removeBtn.addEventListener('click', (e) => { e.stopPropagation(); removeTrackFromPlaylist(currentPlaylist.id, track.id); }); div.querySelector('.track-actions').appendChild(removeBtn); container.appendChild(div); }); }
     function openCreatePlaylistModal() { document.getElementById('playlistNameInput').value = ''; document.getElementById('createPlaylistModal').classList.add('active'); }
@@ -431,14 +390,105 @@
     function closeModals() { document.querySelectorAll('.modal-overlay').forEach(m => m.classList.remove('active')); }
     function showNotification(message, isError = false) { const existingToast = document.querySelector('.toast-notification'); if (existingToast) existingToast.remove(); const toast = document.createElement('div'); toast.className = 'toast-notification'; if (isError) toast.classList.add('error'); toast.innerText = message; document.body.appendChild(toast); setTimeout(() => { if (toast) toast.remove(); }, 3000); }
 
-    // ---------- НОВЫЕ ФУНКЦИИ (СКАЧИВАНИЕ, ЛАЙК АЛЬБОМОВ, ОФЛАЙН) ----------
-    async function initDB() { if (dbPromise) return dbPromise; dbPromise = idb.openDB(DB_NAME, 1, { upgrade(db) { if (!db.objectStoreNames.contains(STORE_NAME)) db.createObjectStore(STORE_NAME, { keyPath: 'id' }); } }); return dbPromise; }
-    async function isTrackDownloaded(trackId) { const db = await initDB(); const track = await db.get(STORE_NAME, trackId); return !!track; }
-    async function saveTrackBlob(trackId, blob, metadata) { const db = await initDB(); await db.put(STORE_NAME, { id: trackId, blob, metadata, downloadedAt: Date.now() }); }
-    async function getTrackBlob(trackId) { const db = await initDB(); const record = await db.get(STORE_NAME, trackId); return record ? record.blob : null; }
-    async function getAllDownloadedTracksMetadata() { const db = await initDB(); const keys = await db.getAllKeys(STORE_NAME); const res = []; for (const id of keys) { const record = await db.get(STORE_NAME, id); if (record && record.metadata) res.push(record.metadata); } return res.sort((a,b) => (b.downloadedAt||0) - (a.downloadedAt||0)); }
-    async function deleteDownloadedTrack(trackId) { const db = await initDB(); await db.delete(STORE_NAME, trackId); downloadedTrackIds.delete(trackId); refreshAllUI(); renderDownloadedPage(); updateFullDownloadBtn(); }
-    async function downloadTrack(track, buttonElement) { if (!track.audioUrl) return; const already = await isTrackDownloaded(track.id); if (already) { showNotification('Уже скачан'); return; } if (!buttonElement) return; buttonElement.classList.add('downloading'); try { const response = await fetch(track.audioUrl); if (!response.ok) throw new Error(); const blob = await response.blob(); await saveTrackBlob(track.id, blob, track); downloadedTrackIds.add(track.id); buttonElement.classList.remove('downloading'); buttonElement.innerHTML = `<svg viewBox="0 0 24 24" stroke="currentColor" fill="currentColor"><path d="M5 20h14M12 4v12m-4-4l4 4 4-4"/></svg>`; buttonElement.style.color = '#1db954'; showNotification(`Скачано: ${track.title}`); refreshAllUI(); renderDownloadedPage(); updateFullDownloadBtn(); } catch(e) { buttonElement.classList.remove('downloading'); showNotification('Ошибка скачивания', true); } }
+    // ---------- ФУНКЦИИ ДЛЯ INDEXEDDB (НАТИВНЫЕ) ----------
+    async function initDB() {
+        if (db) return db;
+        return new Promise((resolve, reject) => {
+            const request = indexedDB.open(DB_NAME, 1);
+            request.onerror = () => reject(request.error);
+            request.onsuccess = () => {
+                db = request.result;
+                resolve(db);
+            };
+            request.onupgradeneeded = (event) => {
+                const db = event.target.result;
+                if (!db.objectStoreNames.contains(STORE_NAME)) {
+                    db.createObjectStore(STORE_NAME, { keyPath: 'id' });
+                }
+            };
+        });
+    }
+    async function isTrackDownloaded(trackId) {
+        const database = await initDB();
+        return new Promise((resolve, reject) => {
+            const tx = database.transaction(STORE_NAME, 'readonly');
+            const store = tx.objectStore(STORE_NAME);
+            const getRequest = store.get(trackId);
+            getRequest.onsuccess = () => resolve(!!getRequest.result);
+            getRequest.onerror = () => reject(getRequest.error);
+        });
+    }
+    async function saveTrackBlob(trackId, blob, metadata) {
+        const database = await initDB();
+        return new Promise((resolve, reject) => {
+            const tx = database.transaction(STORE_NAME, 'readwrite');
+            const store = tx.objectStore(STORE_NAME);
+            const putRequest = store.put({ id: trackId, blob, metadata, downloadedAt: Date.now() });
+            putRequest.onsuccess = () => resolve();
+            putRequest.onerror = () => reject(putRequest.error);
+        });
+    }
+    async function getTrackBlob(trackId) {
+        const database = await initDB();
+        return new Promise((resolve, reject) => {
+            const tx = database.transaction(STORE_NAME, 'readonly');
+            const store = tx.objectStore(STORE_NAME);
+            const getRequest = store.get(trackId);
+            getRequest.onsuccess = () => resolve(getRequest.result ? getRequest.result.blob : null);
+            getRequest.onerror = () => reject(getRequest.error);
+        });
+    }
+    async function getAllDownloadedTracksMetadata() {
+        const database = await initDB();
+        return new Promise((resolve, reject) => {
+            const tx = database.transaction(STORE_NAME, 'readonly');
+            const store = tx.objectStore(STORE_NAME);
+            const getAllRequest = store.getAll();
+            getAllRequest.onsuccess = () => {
+                const records = getAllRequest.result || [];
+                const metadata = records
+                    .filter(r => r.metadata)
+                    .map(r => ({ ...r.metadata, downloadedAt: r.downloadedAt }));
+                metadata.sort((a, b) => (b.downloadedAt || 0) - (a.downloadedAt || 0));
+                resolve(metadata);
+            };
+            getAllRequest.onerror = () => reject(getAllRequest.error);
+        });
+    }
+    async function deleteDownloadedTrack(trackId) {
+        const database = await initDB();
+        return new Promise((resolve, reject) => {
+            const tx = database.transaction(STORE_NAME, 'readwrite');
+            const store = tx.objectStore(STORE_NAME);
+            const deleteRequest = store.delete(trackId);
+            deleteRequest.onsuccess = () => resolve();
+            deleteRequest.onerror = () => reject(deleteRequest.error);
+        });
+    }
+    async function downloadTrack(track, buttonElement) {
+        if (!track.audioUrl) return;
+        const already = await isTrackDownloaded(track.id);
+        if (already) { showNotification('Уже скачан'); return; }
+        if (!buttonElement) return;
+        buttonElement.classList.add('downloading');
+        try {
+            const response = await fetch(track.audioUrl);
+            if (!response.ok) throw new Error();
+            const blob = await response.blob();
+            await saveTrackBlob(track.id, blob, track);
+            downloadedTrackIds.add(track.id);
+            buttonElement.classList.remove('downloading');
+            buttonElement.innerHTML = `<svg viewBox="0 0 24 24" stroke="currentColor" fill="currentColor"><path d="M5 20h14M12 4v12m-4-4l4 4 4-4"/></svg>`;
+            buttonElement.style.color = '#1db954';
+            showNotification(`Скачано: ${track.title}`);
+            refreshAllUI();
+            renderDownloadedPage();
+            updateFullDownloadBtn();
+        } catch(e) {
+            buttonElement.classList.remove('downloading');
+            showNotification('Ошибка скачивания', true);
+        }
+    }
     function loadLikedAlbums() { const stored = localStorage.getItem('rave_liked_albums'); if (stored) likedAlbums = new Set(JSON.parse(stored)); }
     function saveLikedAlbums() { localStorage.setItem('rave_liked_albums', JSON.stringify(Array.from(likedAlbums))); }
     function toggleLikeAlbum(albumId) { if (likedAlbums.has(albumId)) likedAlbums.delete(albumId); else likedAlbums.add(albumId); saveLikedAlbums(); renderLikedAlbumsPage(); }
@@ -455,7 +505,7 @@
         const albumsList = [];
         for (const albumId of likedIds) {
             let album = Array.from(albumsMap.values()).find(a => a.id === albumId);
-            if (!album) {
+            if (!album && supabase) {
                 const { data: albumData, error: albumErr } = await supabase
                     .from('albums')
                     .select(`*, artist:artists(id, name, photo_url, bio)`)
@@ -511,7 +561,7 @@
                 if (!album) album = Array.from(albumsMap.values()).find(a => a.id === albumId);
                 if (album && album.artistId) {
                     let artist = allArtists.find(a => a.id === album.artistId);
-                    if (!artist) {
+                    if (!artist && supabase) {
                         const { data: artistData, error } = await supabase
                             .from('artists')
                             .select('*')
@@ -537,15 +587,47 @@
     
     function refreshAllUI() { renderLibraryTracks(); renderFavorites(); if (currentArtist) renderArtistPageWithoutReload(currentArtist); if (currentPlaylist) renderCurrentPlaylistPage(); const activePage = document.querySelector('.page.active').id; if (activePage === 'downloadedPage') renderDownloadedPage(); if (activePage === 'albumsPage') renderLikedAlbumsPage(); }
     function refreshDownloadedPageIfActive() { if (document.getElementById('downloadedPage').classList.contains('active')) renderDownloadedPage(); }
-    async function renderDownloadedPage() { const container = document.getElementById('downloadedTracksList'); if (!container) return; const downloadedMeta = await getAllDownloadedTracksMetadata(); if (downloadedMeta.length === 0) { container.innerHTML = '<div class="empty-state">Нет скачанных треков. Нажмите значок ⬇️ у трека</div>'; return; } container.innerHTML = ''; for (const track of downloadedMeta) { const div = document.createElement('div'); div.className = 'track-item'; if (currentTrack && currentTrack.id === track.id) div.classList.add('playing'); div.innerHTML = `<div class="track-artwork" style="background-image: url('${track.albumCover || ''}');"></div><div class="track-details"><div class="track-name">${escapeHtml(track.title)}</div><div class="track-artist">${escapeHtml(track.artist)}</div></div><div class="track-actions"><button class="action-icon delete-download" data-id="${track.id}"><svg viewBox="0 0 24 24" stroke="currentColor"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg></button></div>`; const delBtn = div.querySelector('.delete-download'); delBtn.addEventListener('click', async (e) => { e.stopPropagation(); await deleteDownloadedTrack(track.id); renderDownloadedPage(); refreshAllUI(); showNotification('Трек удалён из скачанного'); }); div.addEventListener('click', async () => { const allDownloaded = await getAllDownloadedTracksMetadata(); const idx = allDownloaded.findIndex(t => t.id === track.id); if (idx !== -1) { playTrackWithContext(track, allDownloaded, 'downloaded', 'Скачанное'); } }); container.appendChild(div); } }
+    async function renderDownloadedPage() {
+        const container = document.getElementById('downloadedTracksList');
+        if (!container) return;
+        const downloadedMeta = await getAllDownloadedTracksMetadata();
+        if (downloadedMeta.length === 0) {
+            container.innerHTML = '<div class="empty-state">Нет скачанных треков. Нажмите значок ⬇️ у трека</div>';
+            return;
+        }
+        container.innerHTML = '';
+        for (const track of downloadedMeta) {
+            const div = document.createElement('div');
+            div.className = 'track-item';
+            if (currentTrack && currentTrack.id === track.id) div.classList.add('playing');
+            div.innerHTML = `<div class="track-artwork" style="background-image: url('${track.albumCover || ''}');"></div><div class="track-details"><div class="track-name">${escapeHtml(track.title)}</div><div class="track-artist">${escapeHtml(track.artist)}</div></div><div class="track-actions"><button class="action-icon delete-download" data-id="${track.id}"><svg viewBox="0 0 24 24" stroke="currentColor"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg></button></div>`;
+            const delBtn = div.querySelector('.delete-download');
+            delBtn.addEventListener('click', async (e) => {
+                e.stopPropagation();
+                await deleteDownloadedTrack(track.id);
+                renderDownloadedPage();
+                refreshAllUI();
+                showNotification('Трек удалён из скачанного');
+            });
+            div.addEventListener('click', async () => {
+                const allDownloaded = await getAllDownloadedTracksMetadata();
+                const idx = allDownloaded.findIndex(t => t.id === track.id);
+                if (idx !== -1) {
+                    playTrackWithContext(track, allDownloaded, 'downloaded', 'Скачанное');
+                }
+            });
+            container.appendChild(div);
+        }
+    }
     function buildFavoritesSections() { const row = document.getElementById('favoritesSectionsRow'); if (!row) return; row.innerHTML = `<div class="section-card" id="albumsSectionCard"><svg viewBox="0 0 24 24" stroke="currentColor"><rect x="4" y="4" width="16" height="16" rx="2"/><line x1="8" y1="12" x2="16" y2="12"/><line x1="12" y1="8" x2="12" y2="16"/></svg><span>Альбомы</span></div><div class="section-card" id="myPlaylistsSectionCard"><svg viewBox="0 0 24 24" stroke="currentColor"><rect x="4" y="4" width="16" height="16" rx="2"/><line x1="8" y1="12" x2="16" y2="12"/><line x1="12" y1="8" x2="12" y2="16"/></svg><span>Мои плейлисты</span></div><div class="section-card" id="downloadedSectionCard"><svg viewBox="0 0 24 24" stroke="currentColor"><path d="M5 20h14M12 4v12m-4-4l4 4 4-4"/></svg><span>Скачанное</span></div>`; document.getElementById('albumsSectionCard')?.addEventListener('click', () => { renderLikedAlbumsPage(); switchTab('albums'); }); document.getElementById('myPlaylistsSectionCard')?.addEventListener('click', () => { renderAllPlaylistsGrid(); switchTab('playlists'); }); document.getElementById('downloadedSectionCard')?.addEventListener('click', () => { renderDownloadedPage(); switchTab('downloaded'); }); }
     function checkOnlineAndShow() { const overlay = document.getElementById('offlineOverlay'); if (!navigator.onLine) { overlay.style.display = 'flex'; } else { overlay.style.display = 'none'; } }
     async function updateFullDownloadBtn() { const btn = document.getElementById('fullDownloadBtn'); if (!btn || !currentTrack) return; const downloaded = await isTrackDownloaded(currentTrack.id); if (downloaded) { btn.style.color = '#1db954'; btn.innerHTML = `<svg viewBox="0 0 24 24" stroke="currentColor" fill="currentColor"><path d="M5 20h14M12 4v12m-4-4l4 4 4-4"/></svg>`; } else { btn.style.color = '#fff'; btn.innerHTML = `<svg viewBox="0 0 24 24" stroke="currentColor"><path d="M5 20h14M12 4v12m-4-4l4 4 4-4"/></svg>`; } }
     async function handleFullDownload() { if (!currentTrack) return; const trackToDownload = currentTrack; const btn = document.getElementById('fullDownloadBtn'); if (!btn) return; const already = await isTrackDownloaded(trackToDownload.id); if (already) { showNotification('Уже скачан'); return; } btn.classList.add('downloading'); try { const response = await fetch(trackToDownload.audioUrl); if (!response.ok) throw new Error(); const blob = await response.blob(); await saveTrackBlob(trackToDownload.id, blob, trackToDownload); downloadedTrackIds.add(trackToDownload.id); btn.classList.remove('downloading'); btn.style.color = '#1db954'; btn.innerHTML = `<svg viewBox="0 0 24 24" stroke="currentColor" fill="currentColor"><path d="M5 20h14M12 4v12m-4-4l4 4 4-4"/></svg>`; showNotification(`Скачано: ${trackToDownload.title}`); refreshAllUI(); renderDownloadedPage(); } catch(e) { btn.classList.remove('downloading'); showNotification('Ошибка скачивания', true); } }
 
-    // ---------- НОВАЯ ФУНКЦИЯ ДЛЯ ОФЛАЙН-ЗАГРУЗКИ ДАННЫХ ----------
+    // ---------- ЗАГРУЗКА ДАННЫХ В ОФЛАЙНЕ ----------
     async function loadOfflineDataOnly() {
-        const cached = localStorage.getItem(CACHE_KEY);
+        await initDB();
+        const cached = localStorage.getItem('rave_cache');
         if (cached) {
             try {
                 const data = JSON.parse(cached);
@@ -578,25 +660,21 @@
         updateWaveUI();
     }
 
-    // ---------- ИНИЦИАЛИЗАЦИЯ (МОДИФИЦИРОВАНА) ----------
+    // ---------- ИНИЦИАЛИЗАЦИЯ ----------
     async function init() {
         const offlineOverlay = document.getElementById('offlineOverlay');
         
-        // ---- НАДЁЖНАЯ ПРОВЕРКА ИНТЕРНЕТА через fetch ----
+        // Проверка интернета
         let isOnline = false;
         try {
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), 3000);
-            const response = await fetch('https://www.google.com', { 
-                mode: 'no-cors',
-                signal: controller.signal 
-            });
+            await fetch('https://www.google.com', { mode: 'no-cors', signal: controller.signal });
             clearTimeout(timeoutId);
             isOnline = true;
         } catch (e) {
             isOnline = false;
         }
-        // ------------------------------------------------
         
         if (!isOnline) {
             offlineOverlay.style.display = 'flex';
@@ -607,6 +685,51 @@
             renderAllPlaylistsGrid();
             const loadMoreContainer = document.getElementById('loadMoreContainer');
             if (loadMoreContainer) loadMoreContainer.style.display = 'none';
+            // Добавляем обработчик кнопки после загрузки офлайн-данных
+            const goBtn = document.getElementById('goToDownloadedBtn');
+            if (goBtn) {
+                goBtn.addEventListener('click', async (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    document.getElementById('offlineOverlay').style.display = 'none';
+                    document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+                    document.getElementById('downloadedPage').classList.add('active');
+                    document.querySelectorAll('.tab-item').forEach(btn => btn.classList.remove('active'));
+                    const favTab = document.querySelector('.tab-item[data-tab="favorites"]');
+                    if (favTab) favTab.classList.add('active');
+                    await renderDownloadedPage();
+                });
+            }
+            return;
+        }
+        
+        // Онлайн-режим: загружаем supabase динамически
+        try {
+            const module = await import('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm');
+            const { createClient } = module;
+            supabase = createClient('https://epmhhcpmouimxyivlumi.supabase.co', 'sb_publishable_-c2SB81GbdIS-thI0hyLzA_yZ78U7pD');
+        } catch(e) {
+            console.error('Failed to load supabase', e);
+            offlineOverlay.style.display = 'flex';
+            await loadOfflineDataOnly();
+            buildFavoritesSections();
+            setupSearch();
+            updatePlayerUI();
+            renderAllPlaylistsGrid();
+            const goBtn = document.getElementById('goToDownloadedBtn');
+            if (goBtn) {
+                goBtn.addEventListener('click', async (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    document.getElementById('offlineOverlay').style.display = 'none';
+                    document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+                    document.getElementById('downloadedPage').classList.add('active');
+                    document.querySelectorAll('.tab-item').forEach(btn => btn.classList.remove('active'));
+                    const favTab = document.querySelector('.tab-item[data-tab="favorites"]');
+                    if (favTab) favTab.classList.add('active');
+                    await renderDownloadedPage();
+                });
+            }
             return;
         }
         
@@ -662,23 +785,19 @@
         document.getElementById('confirmDeleteBtn')?.addEventListener('click', () => { if (pendingDeletePlaylistId) { deletePlaylist(pendingDeletePlaylistId); pendingDeletePlaylistId = null; } closeModals(); });
         document.getElementById('cancelDeleteBtn')?.addEventListener('click', closeModals);
         
-        // ---------- ИСПРАВЛЕННЫЙ ОБРАБОТЧИК КНОПКИ "ПЕРЕЙТИ В СКАЧАННОЕ" ----------
         const goBtn = document.getElementById('goToDownloadedBtn');
-        if (goBtn) { 
-            goBtn.addEventListener('click', async (e) => { 
-                e.preventDefault(); 
-                e.stopPropagation(); 
-                document.getElementById('offlineOverlay').style.display = 'none'; 
-                // Принудительное переключение на страницу скачанного
+        if (goBtn) {
+            goBtn.addEventListener('click', async (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                document.getElementById('offlineOverlay').style.display = 'none';
                 document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
                 document.getElementById('downloadedPage').classList.add('active');
-                // Обновляем таб-бар (визуально)
                 document.querySelectorAll('.tab-item').forEach(btn => btn.classList.remove('active'));
                 const favTab = document.querySelector('.tab-item[data-tab="favorites"]');
                 if (favTab) favTab.classList.add('active');
-                // Рендерим список
                 await renderDownloadedPage();
-            }); 
+            });
         }
     }
     init();
