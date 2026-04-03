@@ -350,10 +350,8 @@
     async function fetchArtists() { const { data, error } = await supabase.from('artists').select('*').order('name').limit(50); if (error) { console.error(error); return []; } return data; }
     async function fetchArtistAlbums(artistId) { if (artistAlbumsCache.has(artistId)) return artistAlbumsCache.get(artistId); const { data: albumsData, error } = await supabase.from('albums').select(`*, artist:artists ( id, name, photo_url, bio )`).eq('artist_id', artistId).order('release_year', { ascending: false }); if (error) { console.error(error); return []; } const albums = []; for (const album of albumsData) { const { data: tracksData } = await supabase.from('tracks').select('*').eq('album_id', album.id).order('track_number', { ascending: true }); albums.push({ id: album.id, title: album.title, cover: album.cover_url, year: album.release_year, artistId: album.artist_id, artistName: album.artist?.name, tracks: (tracksData || []).map(t => ({ id: t.id, title: t.title, artist: album.artist?.name || 'Unknown', artistId: album.artist_id, albumId: album.id, album: album.title, albumCover: album.cover_url, albumYear: album.release_year, audioUrl: t.audio_url, duration: t.duration, trackNumber: t.track_number })) }); } artistAlbumsCache.set(artistId, albums); return albums; }
     async function loadMoreTracks() { if (isLoadingMore || !hasMoreTracks || isSearchActive) return; if (!navigator.onLine) return; isLoadingMore = true; const loadMoreBtn = document.getElementById('loadMoreBtn'); if (loadMoreBtn) { loadMoreBtn.classList.add('loading'); loadMoreBtn.innerHTML = 'Загрузка... '; } try { const newTracks = await fetchTracksAndAlbums(currentOffset, PAGE_SIZE); if (newTracks.length === 0) { hasMoreTracks = false; if (loadMoreBtn) setTimeout(() => { const container = document.getElementById('loadMoreContainer'); if (container) container.style.display = 'none'; }, 2000); } else { allTracks.push(...newTracks); currentOffset += newTracks.length; hasMoreTracks = newTracks.length === PAGE_SIZE; rebuildAlbumsMap(); saveToCache(); if (!isSearchActive) renderLibraryTracks(); renderFavorites(); generateShuffledRaveQueue(); updateWaveUI(); if (!hasMoreTracks && loadMoreBtn) { loadMoreBtn.innerHTML = '✅ Все треки загружены ✅'; setTimeout(() => { const container = document.getElementById('loadMoreContainer'); if (container) container.style.display = 'none'; }, 2000); } } } catch (err) { console.error(err); if (loadMoreBtn) { loadMoreBtn.innerHTML = '⚠️ Ошибка загрузки. Нажмите еще раз ⚠️'; loadMoreBtn.classList.remove('loading'); } } finally { isLoadingMore = false; if (loadMoreBtn && hasMoreTracks && !isSearchActive) { loadMoreBtn.classList.remove('loading'); loadMoreBtn.innerHTML = 'Загрузить еще'; } } }
-    // Модифицированная функция loadAllData с проверкой интернета
     async function loadAllData() {
         if (!navigator.onLine) {
-            // Не делаем сетевых запросов, используем только кэш
             if (loadFromCache()) {
                 generateShuffledRaveQueue();
                 if (allTracks.length) currentWaveTrack = shuffledRaveQueue[0] || allTracks[0];
@@ -547,7 +545,6 @@
 
     // ---------- НОВАЯ ФУНКЦИЯ ДЛЯ ОФЛАЙН-ЗАГРУЗКИ ДАННЫХ ----------
     async function loadOfflineDataOnly() {
-        // Загружаем из localStorage
         const cached = localStorage.getItem(CACHE_KEY);
         if (cached) {
             try {
@@ -561,7 +558,6 @@
                 }
             } catch(e) {}
         }
-        // Загружаем скачанные треки из IndexedDB
         const downloadedMeta = await getAllDownloadedTracksMetadata();
         downloadedTrackIds.clear();
         for (const meta of downloadedMeta) {
@@ -614,7 +610,6 @@
             return;
         }
         
-        // Если интернет есть – скрываем оверлей и загружаем всё как обычно
         offlineOverlay.style.display = 'none';
         
         const allMeta = await getAllDownloadedTracksMetadata();
@@ -666,8 +661,25 @@
         document.getElementById('closeAddModal')?.addEventListener('click', closeModals);
         document.getElementById('confirmDeleteBtn')?.addEventListener('click', () => { if (pendingDeletePlaylistId) { deletePlaylist(pendingDeletePlaylistId); pendingDeletePlaylistId = null; } closeModals(); });
         document.getElementById('cancelDeleteBtn')?.addEventListener('click', closeModals);
+        
+        // ---------- ИСПРАВЛЕННЫЙ ОБРАБОТЧИК КНОПКИ "ПЕРЕЙТИ В СКАЧАННОЕ" ----------
         const goBtn = document.getElementById('goToDownloadedBtn');
-        if (goBtn) { goBtn.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); document.getElementById('offlineOverlay').style.display = 'none'; switchTab('downloaded'); renderDownloadedPage(); }); }
+        if (goBtn) { 
+            goBtn.addEventListener('click', async (e) => { 
+                e.preventDefault(); 
+                e.stopPropagation(); 
+                document.getElementById('offlineOverlay').style.display = 'none'; 
+                // Принудительное переключение на страницу скачанного
+                document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+                document.getElementById('downloadedPage').classList.add('active');
+                // Обновляем таб-бар (визуально)
+                document.querySelectorAll('.tab-item').forEach(btn => btn.classList.remove('active'));
+                const favTab = document.querySelector('.tab-item[data-tab="favorites"]');
+                if (favTab) favTab.classList.add('active');
+                // Рендерим список
+                await renderDownloadedPage();
+            }); 
+        }
     }
     init();
 </script>
