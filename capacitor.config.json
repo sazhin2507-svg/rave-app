@@ -1,0 +1,10 @@
+{
+  "appId": "com.rave.app",
+  "appName": "RAVE",
+  "webDir": "www",
+  "server": {
+    "androidScheme": "https",
+    "cleartext": true,
+    "allowNavigation": ["*"]
+  }
+}
