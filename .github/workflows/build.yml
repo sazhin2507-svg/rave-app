@@ -33,6 +33,26 @@ jobs:
           npm install @capacitor/core @capacitor/cli @capacitor/android
           npm install @capacitor-community/media
 
+      - name: Create capacitor.config.json (if not exists)
+        run: |
+          if [ ! -f "capacitor.config.json" ]; then
+            cat > capacitor.config.json << 'EOF'
+          {
+            "appId": "com.rave.app",
+            "appName": "RAVE",
+            "webDir": "www",
+            "server": {
+              "androidScheme": "https",
+              "cleartext": true,
+              "allowNavigation": ["*"]
+            }
+          }
+          EOF
+            echo "✅ capacitor.config.json created"
+          else
+            echo "✅ capacitor.config.json already exists"
+          fi
+
       - name: Init Capacitor
         run: npx cap init RAVE com.rave.app --web-dir ./www
 
@@ -40,7 +60,13 @@ jobs:
         run: |
           mkdir -p www
           cp index.html www/
-          cp -r * www/ 2>/dev/null || true
+          # Копируем все остальные файлы, но не перезаписываем index.html
+          find . -maxdepth 1 -type f ! -name "index.html" -exec cp {} www/ \; 2>/dev/null || true
+          # Копируем папки с ресурсами (если есть)
+          cp -r assets www/ 2>/dev/null || true
+          cp -r css www/ 2>/dev/null || true
+          cp -r js www/ 2>/dev/null || true
+          echo "✅ Web files copied"
 
       - name: Add Android platform
         run: npx cap add android
