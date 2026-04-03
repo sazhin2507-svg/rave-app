@@ -585,8 +585,24 @@
     // ---------- ИНИЦИАЛИЗАЦИЯ (МОДИФИЦИРОВАНА) ----------
     async function init() {
         const offlineOverlay = document.getElementById('offlineOverlay');
-        // Проверяем интернет при старте
-        if (!navigator.onLine) {
+        
+        // ---- НАДЁЖНАЯ ПРОВЕРКА ИНТЕРНЕТА через fetch ----
+        let isOnline = false;
+        try {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 3000);
+            const response = await fetch('https://www.google.com', { 
+                mode: 'no-cors',
+                signal: controller.signal 
+            });
+            clearTimeout(timeoutId);
+            isOnline = true;
+        } catch (e) {
+            isOnline = false;
+        }
+        // ------------------------------------------------
+        
+        if (!isOnline) {
             offlineOverlay.style.display = 'flex';
             await loadOfflineDataOnly();
             buildFavoritesSections();
@@ -597,7 +613,10 @@
             if (loadMoreContainer) loadMoreContainer.style.display = 'none';
             return;
         }
+        
+        // Если интернет есть – скрываем оверлей и загружаем всё как обычно
         offlineOverlay.style.display = 'none';
+        
         const allMeta = await getAllDownloadedTracksMetadata();
         downloadedTrackIds.clear();
         for (const meta of allMeta) downloadedTrackIds.add(meta.id);
@@ -608,8 +627,10 @@
         await loadAllData();
         buildFavoritesSections();
         checkOnlineAndShow();
+        
         window.addEventListener('online', () => { offlineOverlay.style.display = 'none'; location.reload(); });
         window.addEventListener('offline', () => { offlineOverlay.style.display = 'flex'; if (document.querySelector('.page.active').id !== 'downloadedPage') { renderDownloadedPage(); } });
+        
         document.querySelectorAll('.tab-item').forEach(btn => btn.addEventListener('click', () => switchTab(btn.dataset.tab)));
         document.getElementById('waveCover').addEventListener('click', randomWaveTrack);
         document.getElementById('waveLikeBtn').addEventListener('click', () => toggleFav(currentWaveTrack.id));
