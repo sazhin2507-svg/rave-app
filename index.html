@@ -660,6 +660,80 @@
         updateWaveUI();
     }
 
+    // ---------- ПОДКЛЮЧЕНИЕ ВСЕХ СОБЫТИЙ (ОБЩАЯ ФУНКЦИЯ) ----------
+    function attachGlobalEventListeners() {
+        // Tab switching
+        document.querySelectorAll('.tab-item').forEach(btn => btn.addEventListener('click', () => switchTab(btn.dataset.tab)));
+        // Wave controls
+        document.getElementById('waveCover').addEventListener('click', randomWaveTrack);
+        document.getElementById('waveLikeBtn').addEventListener('click', () => toggleFav(currentWaveTrack.id));
+        document.getElementById('wavePlayBtn').addEventListener('click', playCurrentWave);
+        // Mini player controls
+        document.getElementById('miniPlayPause').addEventListener('click', (e) => { e.stopPropagation(); togglePlayPause(); });
+        document.getElementById('miniNext').addEventListener('click', (e) => { e.stopPropagation(); playNext(); });
+        document.getElementById('miniPrev').addEventListener('click', (e) => { e.stopPropagation(); playPrev(); });
+        document.getElementById('miniLikeBtn').addEventListener('click', (e) => { e.stopPropagation(); if (currentTrack) toggleFav(currentTrack.id); });
+        // Full player controls
+        document.getElementById('fullPlayPause').addEventListener('click', togglePlayPause);
+        document.getElementById('fullNext').addEventListener('click', playNext);
+        document.getElementById('fullPrev').addEventListener('click', playPrev);
+        document.getElementById('closeFull').addEventListener('click', () => document.getElementById('fullPlayer').classList.remove('active'));
+        document.getElementById('fullLikeBtn').addEventListener('click', () => { if (currentTrack) toggleFav(currentTrack.id); });
+        document.getElementById('fullAddToPlaylistBtn').addEventListener('click', () => { if (currentTrack) openAddToPlaylistModal(currentTrack); });
+        document.getElementById('fullArtist').addEventListener('click', goToCurrentArtist);
+        document.getElementById('fullDownloadBtn').addEventListener('click', handleFullDownload);
+        // Progress bar seeking
+        const fullBar = document.getElementById('fullProgressBar');
+        fullBar.addEventListener('click', (e) => { if (audio.duration && !isNaN(audio.duration)) { const rect = fullBar.getBoundingClientRect(); const percent = (e.clientX - rect.left) / rect.width; audio.currentTime = percent * audio.duration; } });
+        // Mini player expand to full
+        document.getElementById('miniPlayer').addEventListener('click', (e) => { if (e.target.closest('.mini-ctrl') || e.target.closest('.mini-artist')) return; document.getElementById('fullPlayer').classList.add('active'); });
+        // Playlist info button
+        document.getElementById('playlistInfoBtn').addEventListener('click', async () => {
+            document.getElementById('fullPlayer').classList.remove('active');
+            if (currentPlaylistType === 'favorites') switchTab('favorites');
+            else if (currentPlaylistType === 'album') {
+                const album = Array.from(albumsMap.values()).find(a => a.id === currentPlaylistAlbumId);
+                if (album && album.artistId) {
+                    const artist = allArtists.find(a => a.id === album.artistId);
+                    if (artist) {
+                        showArtistPage(artist, currentPlaylistAlbumId);
+                        switchTab('artist');
+                    }
+                }
+            } else if (currentPlaylistType === 'rave') switchTab('wave');
+            else if (currentPlaylistType === 'playlist' && currentPlaylistObject) await openPlaylistPage(currentPlaylistObject.id);
+            else if (currentPlaylistType === 'downloaded') switchTab('downloaded');
+            else switchTab('library');
+        });
+        // Load more
+        const loadMoreBtn = document.getElementById('loadMoreBtn');
+        if (loadMoreBtn) loadMoreBtn.addEventListener('click', loadMoreTracks);
+        // Back buttons
+        document.getElementById('playlistBackBtn')?.addEventListener('click', () => { currentPlaylist = null; switchTab('favorites'); });
+        document.getElementById('playlistsBackBtn')?.addEventListener('click', () => switchTab('favorites'));
+        document.getElementById('albumsBackBtn')?.addEventListener('click', () => switchTab('favorites'));
+        document.getElementById('downloadedBackBtn')?.addEventListener('click', () => switchTab('favorites'));
+        // Playlist creation
+        document.getElementById('createPlaylistFromAllBtn')?.addEventListener('click', () => openCreatePlaylistModal());
+        document.getElementById('confirmCreatePlaylistBtn')?.addEventListener('click', () => { const name = document.getElementById('playlistNameInput').value.trim(); if (name) { createPlaylist(name); closeModals(); } });
+        document.getElementById('cancelPlaylistBtn')?.addEventListener('click', closeModals);
+        document.getElementById('createNewPlaylistFromModal')?.addEventListener('click', () => { closeModals(); openCreatePlaylistModal(); });
+        document.getElementById('closeAddModal')?.addEventListener('click', closeModals);
+        document.getElementById('confirmDeleteBtn')?.addEventListener('click', () => { if (pendingDeletePlaylistId) { deletePlaylist(pendingDeletePlaylistId); pendingDeletePlaylistId = null; } closeModals(); });
+        document.getElementById('cancelDeleteBtn')?.addEventListener('click', closeModals);
+        // Search
+        setupSearch();
+        // Artist back button (dynamic)
+        const artistHeader = document.getElementById('artistHeader');
+        if (artistHeader && !artistHeader.querySelector('.back-button-round')) {
+            const backBtn = document.createElement('button');
+            backBtn.className = 'back-button-round';
+            backBtn.innerHTML = '<svg viewBox="0 0 24 24" stroke="currentColor"><polyline points="15 18 9 12 15 6"/></svg>';
+            backBtn.addEventListener('click', () => switchTab('library'));
+            artistHeader.prepend(backBtn);
+        }
+    }
+
     // ---------- ИНИЦИАЛИЗАЦИЯ ----------
     async function init() {
         const offlineOverlay = document.getElementById('offlineOverlay');
@@ -680,12 +754,12 @@
             offlineOverlay.style.display = 'flex';
             await loadOfflineDataOnly();
             buildFavoritesSections();
-            setupSearch();
+            attachGlobalEventListeners(); // ВАЖНО: подключаем все события и в офлайн-режиме
             updatePlayerUI();
             renderAllPlaylistsGrid();
             const loadMoreContainer = document.getElementById('loadMoreContainer');
             if (loadMoreContainer) loadMoreContainer.style.display = 'none';
-            // Добавляем обработчик кнопки после загрузки офлайн-данных
+            // Кнопка "Перейти в скачанное"
             const goBtn = document.getElementById('goToDownloadedBtn');
             if (goBtn) {
                 goBtn.addEventListener('click', async (e) => {
@@ -703,7 +777,7 @@
             return;
         }
         
-        // Онлайн-режим: загружаем supabase динамически
+        // Онлайн-режим: загружаем supabase
         try {
             const module = await import('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm');
             const { createClient } = module;
@@ -713,7 +787,7 @@
             offlineOverlay.style.display = 'flex';
             await loadOfflineDataOnly();
             buildFavoritesSections();
-            setupSearch();
+            attachGlobalEventListeners();
             updatePlayerUI();
             renderAllPlaylistsGrid();
             const goBtn = document.getElementById('goToDownloadedBtn');
@@ -744,46 +818,15 @@
         await initDB();
         await loadAllData();
         buildFavoritesSections();
+        attachGlobalEventListeners(); // Подключаем события и для онлайн-режима
         checkOnlineAndShow();
         
         window.addEventListener('online', () => { offlineOverlay.style.display = 'none'; location.reload(); });
         window.addEventListener('offline', () => { offlineOverlay.style.display = 'flex'; if (document.querySelector('.page.active').id !== 'downloadedPage') { renderDownloadedPage(); } });
         
-        document.querySelectorAll('.tab-item').forEach(btn => btn.addEventListener('click', () => switchTab(btn.dataset.tab)));
-        document.getElementById('waveCover').addEventListener('click', randomWaveTrack);
-        document.getElementById('waveLikeBtn').addEventListener('click', () => toggleFav(currentWaveTrack.id));
-        document.getElementById('wavePlayBtn').addEventListener('click', playCurrentWave);
-        document.getElementById('miniPlayPause').addEventListener('click', (e) => { e.stopPropagation(); togglePlayPause(); });
-        document.getElementById('miniNext').addEventListener('click', (e) => { e.stopPropagation(); playNext(); });
-        document.getElementById('miniPrev').addEventListener('click', (e) => { e.stopPropagation(); playPrev(); });
-        document.getElementById('miniLikeBtn').addEventListener('click', (e) => { e.stopPropagation(); if (currentTrack) toggleFav(currentTrack.id); });
-        document.getElementById('fullPlayPause').addEventListener('click', togglePlayPause);
-        document.getElementById('fullNext').addEventListener('click', playNext);
-        document.getElementById('fullPrev').addEventListener('click', playPrev);
-        document.getElementById('closeFull').addEventListener('click', () => document.getElementById('fullPlayer').classList.remove('active'));
-        document.getElementById('miniPlayer').addEventListener('click', (e) => { if (e.target.closest('.mini-ctrl') || e.target.closest('.mini-artist')) return; document.getElementById('fullPlayer').classList.add('active'); });
-        document.getElementById('fullLikeBtn').addEventListener('click', () => { if (currentTrack) toggleFav(currentTrack.id); });
-        document.getElementById('fullAddToPlaylistBtn').addEventListener('click', () => { if (currentTrack) openAddToPlaylistModal(currentTrack); });
-        document.getElementById('fullArtist').addEventListener('click', goToCurrentArtist);
-        const fullBar = document.getElementById('fullProgressBar'); fullBar.addEventListener('click', (e) => { if (audio.duration && !isNaN(audio.duration)) { const rect = fullBar.getBoundingClientRect(); const percent = (e.clientX - rect.left) / rect.width; audio.currentTime = percent * audio.duration; } });
-        document.getElementById('fullDownloadBtn').addEventListener('click', handleFullDownload);
-        audio.volume = 0.8;
-        const playlistInfoBtn = document.getElementById('playlistInfoBtn'); playlistInfoBtn.addEventListener('click', async () => { document.getElementById('fullPlayer').classList.remove('active'); if (currentPlaylistType === 'favorites') switchTab('favorites'); else if (currentPlaylistType === 'album') { const album = Array.from(albumsMap.values()).find(a => a.id === currentPlaylistAlbumId); if (album && album.artistId) { const artist = allArtists.find(a => a.id === album.artistId); if (artist) { showArtistPage(artist, currentPlaylistAlbumId); switchTab('artist'); } } } else if (currentPlaylistType === 'rave') switchTab('wave'); else if (currentPlaylistType === 'playlist' && currentPlaylistObject) await openPlaylistPage(currentPlaylistObject.id); else if (currentPlaylistType === 'downloaded') switchTab('downloaded'); else switchTab('library'); });
-        const loadMoreBtn = document.getElementById('loadMoreBtn'); if (loadMoreBtn) loadMoreBtn.addEventListener('click', loadMoreTracks);
-        setupSearch(); updatePlayerUI(); if (document.querySelector('.tab-item.active').dataset.tab === 'wave') document.getElementById('searchToggleBtn').style.display = 'none';
-        setPlaylistContext('all', 'Все треки'); renderAllPlaylistsGrid();
-        const artistHeader = document.getElementById('artistHeader'); if (artistHeader && !artistHeader.querySelector('.back-button-round')) { const backBtn = document.createElement('button'); backBtn.className = 'back-button-round'; backBtn.innerHTML = '<svg viewBox="0 0 24 24" stroke="currentColor"><polyline points="15 18 9 12 15 6"/></svg>'; backBtn.addEventListener('click', () => switchTab('library')); artistHeader.prepend(backBtn); }
-        document.getElementById('playlistBackBtn')?.addEventListener('click', () => { currentPlaylist = null; switchTab('favorites'); });
-        document.getElementById('playlistsBackBtn')?.addEventListener('click', () => switchTab('favorites'));
-        document.getElementById('albumsBackBtn')?.addEventListener('click', () => switchTab('favorites'));
-        document.getElementById('downloadedBackBtn')?.addEventListener('click', () => switchTab('favorites'));
-        document.getElementById('createPlaylistFromAllBtn')?.addEventListener('click', () => openCreatePlaylistModal());
-        document.getElementById('confirmCreatePlaylistBtn')?.addEventListener('click', () => { const name = document.getElementById('playlistNameInput').value.trim(); if (name) { createPlaylist(name); closeModals(); } });
-        document.getElementById('cancelPlaylistBtn')?.addEventListener('click', closeModals);
-        document.getElementById('createNewPlaylistFromModal')?.addEventListener('click', () => { closeModals(); openCreatePlaylistModal(); });
-        document.getElementById('closeAddModal')?.addEventListener('click', closeModals);
-        document.getElementById('confirmDeleteBtn')?.addEventListener('click', () => { if (pendingDeletePlaylistId) { deletePlaylist(pendingDeletePlaylistId); pendingDeletePlaylistId = null; } closeModals(); });
-        document.getElementById('cancelDeleteBtn')?.addEventListener('click', closeModals);
+        setPlaylistContext('all', 'Все треки');
+        renderAllPlaylistsGrid();
+        updatePlayerUI();
         
         const goBtn = document.getElementById('goToDownloadedBtn');
         if (goBtn) {
