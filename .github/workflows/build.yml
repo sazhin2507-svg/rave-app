@@ -32,6 +32,7 @@ jobs:
           npm init -y
           npm install @capacitor/core @capacitor/cli @capacitor/android
           npm install @capacitor-community/media
+          npm install @capacitor/app
 
       - name: Create capacitor.config.json (if not exists)
         run: |
